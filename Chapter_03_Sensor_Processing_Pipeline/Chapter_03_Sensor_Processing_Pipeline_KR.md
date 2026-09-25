@@ -1,0 +1,429 @@
+**Volume 12. Autonomous Driving Software**
+
+# Chapter 03. Sensor Processing Pipeline
+
+## 03.01. Sensor Processing Pipeline Architecture and Data Flow
+
+![](images/image1.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+센서 처리 파이프라인(Sensor Processing Pipeline)은 물리적 환경(Physical Environment)과 자율주행 소프트웨어 스택(Autonomous Driving Software Stack)을 연결하는 최초의 계산적 연결 계층을 형성한다. 카메라(Camera), 라이다(LiDAR), 레이더(Radar), 위성항법시스템(GNSS), 관성측정장치(IMU), 초음파 센서(Ultrasonic Sensor), 휠 인코더(Wheel Encoder)는 서로 다른 주기, 형식, 좌표계, 해상도 및 불확실성 특성을 가진 측정값을 지속적으로 생성한다. 파이프라인은 이러한 이종 데이터 스트림(Heterogeneous Data Stream)을 동기화되고 구조화된 정보로 변환하여 인지(Perception), 위치추정(Localization), 매핑(Mapping), 계획(Planning), 안전(Safety) 기능에서 사용할 수 있도록 한다.
+
+파이프라인은 일반적으로 센서 인터페이스(Sensor Interface)와 하드웨어 추상화 계층(Hardware Abstraction Layer)에서 시작한다. 장치 드라이버(Device Driver)는 이더넷(Ethernet), CAN, CAN FD, USB, 직렬 통신(Serial Link) 또는 전용 차량 네트워크(Automotive Network)와 같은 인터페이스를 통해 센서와 통신한다. 원시 패킷(Raw Packet)은 표준화된 소프트웨어 표현으로 디코딩되며, 이 과정에서 센서 식별자(Sensor Identifier), 시퀀스 번호(Sequence Number), 하드웨어 타임스탬프(Hardware Timestamp), 노출 파라미터(Exposure Parameter), 측정 상태 및 진단 정보(Diagnostic Information)와 같은 핵심 메타데이터(Metadata)가 보존된다.
+
+시간(Time)은 각각의 센서가 비동기적으로 동작하기 때문에 기본적인 아키텍처 요소가 된다. 카메라는 수십 헤르츠(Hz)의 속도로 프레임(Frame)을 생성할 수 있고, 라이다는 이와 다른 주기로 스캔(Scan)을 생성하며, 관성측정장치는 수백 헤르츠로 측정값을 제공할 수 있다. 따라서 하드웨어 타임스탬프는 가능한 한 실제 측정 이벤트에 가까운 시점에서 획득해야 한다. 클록 동기화(Clock Synchronization), 타임스탬프 정렬(Timestamp Alignment), 버퍼링(Buffering), 보간(Interpolation), 모션 보상(Motion Compensation)을 통해 서로 다른 센서의 측정값을 결합하기 전에 공통 시간 기준(Common Temporal Reference)을 확립한다.
+
+공간 정렬(Spatial Alignment) 역시 중요하다. 각 센서는 고유한 좌표 프레임(Coordinate Frame)에서 환경을 관측하지만, 자율주행 기능은 일반적으로 공통 차량 프레임(Vehicle Frame), 베이스 프레임(Base Frame), 오도메트리 프레임(Odometry Frame), 지도 프레임(Map Frame) 또는 월드 프레임(World Frame)의 데이터를 요구한다. 캘리브레이션(Calibration)은 영상 센서의 내부 파라미터(Intrinsic Parameter)와 센서 및 차량 사이의 외부 변환(Extrinsic Transformation)을 제공한다. 변환 계층(Transformation Hierarchy)을 통해 포인트(Point), 이미지(Image), 검출 결과(Detection), 움직임 추정(Motion Estimate)을 전체 자율주행 소프트웨어 스택에서 일관되게 연계할 수 있다.
+
+원시 센서 측정값(Raw Sensor Measurement)은 일반적으로 고수준 인지 알고리즘(High-Level Perception Algorithm)에 직접 전달되지 않는다. 각 센서는 계산 비용을 제어하면서 데이터 품질을 향상시키기 위한 센서 유형별 전처리(Modality-Specific Preprocessing)를 필요로 한다. 카메라 파이프라인은 디코딩(Decoding), 디베이어링(Debayering), 왜곡 보정(Distortion Correction), 정류(Rectification), 크기 조정(Resizing), 정규화(Normalization)를 수행할 수 있다. 라이다 처리는 일반적으로 패킷 재구성(Packet Reconstruction), 거리 필터링(Range Filtering), 이상치 제거(Outlier Rejection), 모션 보상, 포인트 클라우드 다운샘플링(Point-Cloud Downsampling)을 포함하며, 레이더 처리는 신호 수준 측정값을 활용 가능한 검출 결과로 변환한다.
+
+잘 설계된 아키텍처는 데이터 획득(Acquisition), 전처리(Preprocessing), 동기화(Synchronization), 변환(Transformation), 의미 처리(Semantic Processing)를 모듈화된 단계로 분리한다. 이러한 분리는 센서별 구현 세부사항이 전체 자율주행 스택으로 확산되는 것을 방지한다. 표준화된 인터페이스(Standardized Interface)를 통해 하위 모듈은 특정 하드웨어 모델에 의존하지 않고 정규화된 이미지, 보정된 포인트 클라우드(Calibrated Point Cloud), 레이더 표적(Radar Target), 관성 측정값(Inertial Measurement), 파생 특징(Derived Feature)을 사용할 수 있다. 따라서 센서를 변경하거나 업그레이드하더라도 상위 소프트웨어 계층의 변경을 최소화할 수 있다.
+
+데이터 흐름(Data Flow)은 하나의 순차 프로그램이 아니라 스트림(Stream)의 형태로 구성될 수 있다. 여러 센서 파이프라인은 동시에 실행되며, 각 단계에서 생성된 메시지(Message)는 하나 이상의 하위 모듈에서 사용된다. 카메라 전처리 결과는 객체 검출(Object Detection)과 의미론적 분할(Semantic Segmentation)에 동시에 전달될 수 있으며, 라이다 스트림은 장애물 검출(Obstacle Detection), 위치추정, 지면 분할(Ground Segmentation), 자유공간 추정(Free-Space Estimation)에 활용될 수 있다. 따라서 미들웨어(Middleware)는 효율적인 메시지 전송, 버퍼링, 스케줄링(Scheduling), 서비스 품질(Quality of Service) 동작을 담당한다.
+
+전처리(Preprocessing)와 인지(Perception)의 경계는 명확하게 유지되어야 한다. 센서 처리는 주로 측정값을 기하학적, 시간적, 수치적으로 일관된 표현으로 변환하는 역할을 한다. 인지는 이러한 표현을 해석하여 객체(Object), 표면(Surface), 자유공간(Free Space), 의미정보(Semantics), 장면 구조(Scene Structure)를 추정한다. 이러한 구분은 이후 단계에서 주행 가능 영역 추정(Drivable-Area Estimation)과 객체 검출(Object Detection)을 별도로 처리하면서 센서 파이프라인을 이들 기능의 공통 데이터 기반으로 사용할 때 특히 중요하다.
+
+다중 센서 아키텍처(Multi-Sensor Architecture)는 각 데이터 소비자(Consumer)의 요구사항에 따라 서로 다른 동기화 정책(Synchronization Policy)을 적용한다. 카메라와 라이다 측정값을 측정 수준(Measurement Level)이나 특징 수준(Feature Level)에서 융합할 경우 엄격한 동기화가 유용할 수 있는 반면, 위치추정에서는 고주파 관성측정장치 관측값과 저주파 위성항법시스템 또는 라이다 업데이트를 비동기적으로 결합할 수 있다. 따라서 파이프라인은 모든 센서 스트림에 하나의 동기화 방식을 강제하는 대신 정확 동기화(Exact Synchronization), 근사 동기화(Approximate Synchronization), 비동기 연계(Asynchronous Association)를 지원해야 한다.
+
+버퍼 관리(Buffer Management)는 정확도와 지연시간(Latency)에 큰 영향을 준다. 버퍼는 센서 주파수, 통신 지연, 처리 시간의 차이를 보상하지만 과도한 버퍼링은 자율 시스템이 오래된 환경 표현에 반응하도록 만들 수 있다. 실제 구현에서는 제한된 큐(Bounded Queue), 최대 데이터 유효 시간(Maximum Data Age), 타임아웃 정책(Timeout Policy), 결정론적 폐기 규칙(Deterministic Discard Rule)을 설정한다. 목표는 단순히 처리량(Throughput)을 극대화하는 것이 아니라 자율주행 스택의 지연시간 예산(Latency Budget) 내에서 충분히 최신이며 일관된 정보를 전달하는 것이다.
+
+좌표 변환(Coordinate Transformation)과 자차 운동 보상(Ego-Motion Compensation)은 이동 플랫폼에서 특히 중요하다. 라이다 스캔이 진행되는 동안 또는 비동기 센서 관측 사이에 차량은 상당한 거리만큼 이동하거나 회전할 수 있다. 이러한 움직임을 보상하지 않으면 정적인 구조물이 왜곡되어 나타나고 서로 다른 시점의 측정값이 정렬되지 않을 수 있다. 따라서 관성측정장치, 휠 오도메트리(Wheel Odometry), 위성항법시스템 또는 위치추정에서 계산한 차량 움직임을 사용하여 후속 융합이나 인지를 수행하기 전에 측정값을 선택된 기준 시간(Reference Time)으로 변환할 수 있다.
+
+센서 상태 정보(Sensor Health Information)는 측정 데이터와 함께 전달되어야 한다. 패킷 손실(Missing Packet), 프레임 정지(Frozen Frame), 비정상적인 타임스탬프 변화, 과도한 노이즈(Noise), 캘리브레이션 오류, 통신 장애 또는 비현실적인 값은 형식적으로 정상인 메시지라도 무효화할 수 있다. 강건한 파이프라인(Robust Pipeline)은 데이터 최신성(Freshness), 무결성(Integrity), 범위 유효성(Range Validity), 시간 일관성(Timing Consistency), 진단 상태를 지속적으로 평가한다. 이를 통해 하위 모듈은 정상적인 관측값과 성능이 저하된 입력을 구분하고 신뢰할 수 없는 데이터를 그대로 처리하는 대신 동작을 변경할 수 있다.
+
+결함 처리(Fault Handling)는 독립적인 진단 기능이 아니라 아키텍처 기능으로 발전한다. 하나의 센서를 사용할 수 없게 되면 처리 그래프(Processing Graph)는 해당 센서에 의존하는 알고리즘을 비활성화하거나, 대체 데이터 소스(Alternative Data Source)로 전환하거나, 운행 속도를 낮추거나, 최소 위험 동작(Minimal-Risk Behavior)을 요청할 수 있다. 이를 위해서는 센서와 처리 모듈 사이의 의존 관계와 런타임 상태(Runtime Health State)가 명확하게 정의되어야 한다. 따라서 센서 고장 검출(Sensor Failure Detection)과 파이프라인 재구성(Pipeline Reconfiguration)은 센서 처리 문제의 일부로 다루어진다.
+
+고대역폭 센서(High-Bandwidth Sensor)는 상당한 메모리와 연산 자원을 요구한다. 다수의 카메라와 고밀도 라이다(Dense LiDAR)는 매초 수백 메가바이트 이상의 중간 데이터를 생성할 수 있다. 반복적인 직렬화(Serialization)와 메모리 복사(Memory Copy)는 인지 성능을 향상시키지 않으면서 시스템 자원을 소비할 수 있다. 따라서 효율적인 아키텍처에서는 사전 할당 버퍼(Preallocated Buffer), 공유 메모리(Shared Memory), 제로 카피 전송(Zero-Copy Transport), 고정 메모리(Pinned Memory), 배칭(Batching), 지원 가능한 경우 직접 GPU 전송(Direct GPU Transfer)을 활용하면서 데이터 소유권과 수명 주기(Lifetime)를 신중하게 관리한다.
+
+CPU와 GPU 작업 부하는 모든 연산을 단순히 가속기(Accelerator)로 이동시키는 방식이 아니라 연산 특성에 따라 분할되어야 한다. 패킷 처리, 상태 관리, 진단, 경량 변환은 CPU에서 효율적으로 수행할 수 있는 반면, 이미지 연산, 포인트 클라우드 커널(Point-Cloud Kernel), 신경망 전처리(Neural-Network Preprocessing), 병렬 기하 연산(Parallel Geometric Computation)은 GPU의 이점을 얻을 수 있다. 실제 종단 간 가속(End-to-End Acceleration)을 평가할 때에는 데이터 전송 오버헤드(Transfer Overhead), 동기화 장벽(Synchronization Barrier), 커널 실행(Kernel Execution), 메모리 부하(Memory Pressure)를 함께 고려해야 한다.
+
+지연시간은 전체 측정 데이터 경로(Measurement Path)에 걸쳐 분석되어야 한다. 센서 노출 또는 스캔 획득, 네트워크 전송, 드라이버 처리, 디코딩, 동기화, 전처리, 메모리 전송, 추론(Inference), 융합(Fusion), 메시지 전달이 모두 계획 모듈에 도달하는 정보의 시간 지연에 영향을 준다. 다른 구간에서 큐잉(Queueing)이 지연시간을 지배한다면 하나의 커널만 최적화해도 전체 시스템에는 큰 효과가 없을 수 있다. 따라서 각 파이프라인 단계에 지연시간 예산을 할당하고 실제 센서 부하 조건에서 타임스탬프 기반 추적(Timestamped Trace)을 통해 이를 측정해야 한다.
+
+처리량(Throughput)과 지연시간(Latency)은 서로 연관되어 있지만 서로 다른 요구사항이다. 파이프라인이 모든 프레임을 최종적으로 처리하더라도 결과가 지나치게 늦게 도착한다면 자율주행에는 적합하지 않을 수 있다. 반대로 오래된 프레임을 의도적으로 폐기하면 현재 관측 데이터에 연산을 집중함으로써 실시간 동작(Real-Time Behavior)을 향상시킬 수 있다. 따라서 스케줄링 정책은 무제한적인 큐 증가보다 데이터 최신성, 제한된 실행 시간(Bounded Execution Time), 예측 가능한 성능 저하(Predictable Degradation)를 우선해야 하며, 특히 플랫폼이 빠르게 이동하거나 장애물 근처에서 운행할 때 이러한 원칙이 중요하다.
+
+야외 자율이동로봇(Outdoor AMR)은 날씨, 조명, 진동, 지형, 먼지, 물, 플랫폼 움직임에 따라 센서 조건이 크게 변하기 때문에 추가적인 요구사항을 가진다. 직사광선에서는 카메라 노출이 크게 변할 수 있고, 비나 먼지 환경에서는 라이다 반사값이 저하될 수 있으며, 구조물 주변에서는 위성항법시스템의 신뢰성이 낮아질 수 있고, 진동은 관성 측정값에 영향을 줄 수 있다. 따라서 파이프라인은 센서별 신뢰도(Confidence)와 진단 정보를 유지하여 상위 자율주행 모듈이 센서 품질이 일정하다고 가정하지 않고 변화하는 관측 품질에 적응할 수 있도록 해야 한다.
+
+처리된 출력은 최종적으로 위치추정(Localization), 주행 가능 영역 추정(Drivable-Area Estimation), 객체 검출(Object Detection), 추적(Tracking), 매핑(Mapping) 및 기타 자율주행 기능을 위한 공유 입력(Shared Input)이 된다. 따라서 센서 파이프라인은 단순한 필터들의 집합이 아니라 여러 기능을 관통하는 공통 인프라 계층(Cross-Cutting Infrastructure Layer)이다. 파이프라인의 인터페이스는 물리적 측정값이 어떻게 소프트웨어가 활용할 수 있는 증거로 변환되는지를 정의하며, 시간 처리와 고장 대응 방식은 모든 상위 알고리즘의 동작 조건을 결정한다.
+
+확장 가능한 구현(Scalable Implementation)은 실시간 운용에서 사용하는 것과 동일한 논리적 인터페이스(Logical Interface)를 통해 기록(Recording), 재생(Replay), 시뮬레이션(Simulation), 검증(Validation)을 지원해야 한다. 기록된 센서 스트림을 이용하면 현장에서 발생한 이벤트를 재현할 수 있고, 시뮬레이션 센서를 사용하면 실제 배치 전에 알고리즘을 검증할 수 있으며, 결정론적 재생(Deterministic Replay)은 시간 처리 또는 인지 실패를 분리하여 분석할 수 있다. 실시간 데이터, 기록 데이터, 시뮬레이션 데이터가 호환 가능한 스키마(Schema)와 타임스탬프를 공유하면 하위 자율주행 소프트웨어를 다시 작성하지 않고 개별 파이프라인 단계를 시험할 수 있다.
+
+관측 가능성(Observability)은 전체 아키텍처를 완성하는 핵심 요소이다. 처리 노드(Processing Node)는 실행 시간, 큐 깊이(Queue Depth), 입력 주파수, 폐기된 메시지 수, 타임스탬프 편차(Timestamp Skew), 메모리 사용량, 센서 상태, 출력 데이터 최신성을 외부에 제공해야 한다. 이러한 측정값을 통해 병목지점(Bottleneck)을 찾고 센서 고장과 소프트웨어 과부하를 구분할 수 있다. 재현 가능한 기록 및 재생 기능과 결합된 관측 가능성은 센서 파이프라인을 프로파일링(Profiling), 검증, 최적화, 지속적인 모니터링이 가능한 공학 시스템으로 만든다.
+
+결과적으로 이러한 아키텍처는 물리적 측정값(Physical Measurement)을 신뢰할 수 있는 기계 판독 가능 상태(Machine-Readable State)로 지속적으로 변환하는 과정으로 이해할 수 있다. 센서 획득(Sensor Acquisition)은 원시 증거를 확보하고, 시간 처리와 캘리브레이션은 데이터 일관성을 확립하며, 전처리는 활용성을 높이고, 데이터 전송(Transport)은 정규화된 표현을 배포하며, 상태 모니터링(Health Monitoring)은 신뢰도를 평가하고, 이후의 인지 과정은 환경의 의미를 추출한다. 이러한 단계들을 하나의 일관된 데이터 흐름 시스템(Data-Flow System)으로 설계하는 것은 신뢰성 높은 자율주행과 야외 자율이동로봇 운용을 위한 기반이 된다.
+
+## 03.02. LiDAR Preprocessing Filtering Downsampling Denoising [w/Code]
+
+![](images/image2.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+라이다 전처리(LiDAR Preprocessing)는 원시 3차원 거리 측정값(Raw Three-Dimensional Range Measurement)을 자율주행 인지(Autonomous Driving Perception), 위치추정(Localization), 매핑(Mapping), 계획(Planning)에 사용할 수 있는 포인트 클라우드(Point Cloud)로 변환하는 최초의 계산 단계이다. 라이다 센서는 위치(Position), 거리(Range), 반사강도(Intensity), 링(Ring), 타임스탬프(Timestamp), 그리고 경우에 따라 추가 반사(Return) 정보를 포함하는 대량의 포인트를 생성한다. 이러한 측정값에는 필연적으로 노이즈(Noise), 이상치(Outlier), 중복 관측(Duplicated Observation), 누락된 반사(Missing Return), 유효 영역을 벗어난 포인트가 포함된다. 따라서 전처리는 후속 알고리즘이 필요로 하는 기하학적 정보를 보존하면서 깨끗하고 계산 가능한 수준의 표현을 구축한다.
+
+전처리 파이프라인(Preprocessing Pipeline)은 일반적으로 패킷 수신(Packet Reception)과 포인트 클라우드 재구성(Point-Cloud Reconstruction)에서 시작한다. 라이다 드라이버(LiDAR Driver)는 네트워크 또는 직렬 패킷을 수신하고 센서별 패킷 형식에 따라 이를 개별 측정값으로 변환한다. 가능한 경우 각 포인트에는 타임스탬프, 좌표 정보, 반사강도 및 센서 식별자(Sensor Identity)가 유지되어야 한다. 재구성된 포인트 클라우드는 일관된 좌표 프레임(Coordinate Frame)으로 표현된다. 이 단계의 정확한 패킷 디코딩(Packet Decoding)은 매우 중요하다. 이 단계의 오류는 명백한 소프트웨어 장애가 아니라 이후에 기하학적 왜곡, 잘못된 객체 위치 또는 불안정한 위치추정으로 나타날 수 있기 때문이다.
+
+거리 필터링(Range Filtering)은 물리적 또는 운용 측면에서 유용한 센싱 영역을 벗어난 측정값을 제거한다. 지나치게 가까운 포인트는 로봇 본체, 센서 하우징, 케이블 또는 기타 자기 자신에 해당하는 장애물(Self-Obstacle)일 수 있으며, 지나치게 먼 포인트는 측정 신뢰성이 낮고 즉각적인 주행에 대한 관련성이 제한적일 수 있다. 센서 장착 구성에 따라 수평 및 수직 시야각(Field of View) 제한도 적용할 수 있다. 거리 필터링은 불필요한 계산을 줄이지만 임계값은 신중하게 선택해야 한다. 과도한 필터링은 정당한 장애물, 지형 특징 또는 위치추정에 필요한 원거리 랜드마크(Landmark)를 제거할 수 있기 때문이다.
+
+이상치 제거(Outlier Removal)는 의미 있는 물리적 표면을 나타내지 않는 고립된 측정값을 처리한다. 라이다 이상치는 센서 노이즈, 반사 재질, 대기 영향, 다중경로 현상(Multipath Behavior), 패킷 손상 또는 불완전한 반사(Return)로 인해 발생할 수 있다. 통계적 필터링(Statistical Filtering)은 주변 포인트와 비교하여 이웃 특성이 크게 다른 포인트를 식별할 수 있으며, 반경 기반 방법(Radius-Based Method)은 주변에 충분한 이웃 포인트가 없는 측정값을 제거할 수 있다. 적절한 방법은 포인트 밀도(Point Density)와 목적 애플리케이션에 따라 달라진다. 필터링은 기하학적 일관성을 향상시키면서 기둥, 표지판, 케이블 또는 보행자와 같은 얇은 구조물을 제거하지 않아야 한다.
+
+복셀 기반 다운샘플링(Voxel-Based Downsampling)은 전체 공간 구조를 유지하면서 포인트 클라우드 밀도를 줄이기 위해 널리 사용된다. 3차원 공간을 규칙적인 복셀(Voxel)로 나누고 동일한 복셀 안에 존재하는 여러 포인트를 일반적으로 중심점(Centroid)과 같은 하나의 대표 포인트로 표현한다. 이를 통해 메모리 사용량과 최근접 이웃 검색(Nearest-Neighbor Search), 정합(Registration), 분할(Segmentation), 신경망 추론(Neural-Network Inference)에 필요한 계산량을 크게 줄일 수 있다. 복셀 크기(Voxel Size)는 중요한 설계 파라미터가 된다. 작은 복셀은 더 많은 기하학적 세부정보를 보존하지만 계산량을 증가시키며, 큰 복셀은 효율성을 높이지만 작은 객체와 날카로운 기하학적 경계를 제거할 수 있다.
+
+따라서 다운샘플링은 고정된 전처리 규칙이 아니라 애플리케이션 의존적인 작업으로 다루어야 한다. 위치추정 모듈(Localization Module)은 상대적으로 상세한 구조 정보를 요구할 수 있는 반면, 객체 검출기(Object Detector)는 해당 네트워크 아키텍처에 최적화된 표현을 사용할 수 있다. 마찬가지로 저속으로 운용되는 야외 자율이동로봇(Outdoor AMR)은 고속 플랫폼보다 높은 포인트 밀도를 허용할 수 있으며, 고속 플랫폼에서는 인지 지연시간(Perception Latency)이 더 중요할 수 있다. 필요한 경우 하나의 입력 클라우드에서 여러 표현을 생성하여 서로 다른 소비자(Consumer)가 적절하게 샘플링된 데이터를 사용하도록 할 수 있으며, 모든 하위 알고리즘이 전체 해상도 스트림을 처리하도록 강제할 필요가 없다.
+
+디노이징(Denoising)은 이상치 제거와 관련되어 있지만 의미 있는 표면을 유지하면서 측정값의 변동을 더욱 광범위하게 줄이는 데 초점을 둔다. 라이다 포인트 클라우드는 평평한 벽, 도로 또는 차량 표면 주변에서 작은 편차를 만드는 무작위 거리 오차(Random Range Error)를 포함할 수 있다. 공간 필터(Spatial Filter), 이웃 통계(Neighborhood Statistics), 시간적 일관성 검사(Temporal Consistency Check), 모델 기반 기법(Model-Based Technique)을 사용하여 이러한 변동을 줄일 수 있다. 그러나 과도한 디노이징은 중요한 불연속 구조(Discontinuity)를 지나치게 평활화할 수 있다. 자율주행에서는 연석(Curb), 계단, 도로 가장자리, 작은 장애물 및 지형 변화가 안전과 관련될 수 있으므로 전처리는 이후 주행 가능성(Traversability)이나 충돌 회피(Collision Avoidance)에 영향을 줄 수 있는 특징을 보존해야 한다.
+
+지면 관련 전처리(Ground-Related Preprocessing)는 도로와 지형 표면이 일반적으로 라이다 포인트의 대부분을 차지하기 때문에 특별한 주의가 필요하다. 단순한 높이 임계값(Height Threshold)은 제한된 환경에서는 효과적일 수 있지만 경사로, 램프, 불규칙한 지형 및 오프로드 표면에서는 신뢰성이 낮아진다. 보다 발전된 처리는 국부 표면 모델(Local Surface Model), 기하학적 관계(Geometric Relationship), 고도 통계(Elevation Statistics) 또는 분할 기법(Segmentation Method)을 이용하여 지면과 유사한 구조와 장애물을 구분할 수 있다. 지면 분할(Ground Segmentation)은 이후 장에서 별도의 주제로 다루기 때문에 전처리 단계에서는 완전한 의미론적 지면 분석 기능을 중복 구현하기보다는 안정적이고 적절하게 필터링된 포인트 클라우드를 준비하는 것이 중요하다.
+
+이동 왜곡(Motion Distortion)은 이동하는 자율이동로봇에서 고려해야 할 또 다른 중요한 요소이다. 회전식 라이다(Rotating LiDAR)는 모든 포인트를 정확히 동일한 시각에 취득하지 않는다. 하나의 스캔이 진행되는 동안 차량이 충분히 이동하거나 회전하면 재구성된 포인트 클라우드에 눈에 띄는 왜곡이 발생할 수 있다. 플랫폼이 빠르게 이동하거나 불규칙한 지형에서 운용되는 경우 이러한 영향은 더욱 커질 수 있다. 관성측정장치(IMU), 휠 오도메트리(Wheel Odometry), 위성항법시스템(GNSS) 또는 위치추정에서 얻은 자차 운동(Ego Motion) 정보를 사용하여 측정값을 공통 기준 시간(Common Reference Time)으로 변환할 수 있다. 이러한 왜곡 보정은 매핑, 정합, 장애물 추정 및 다중 센서 융합(Multi-Sensor Fusion)을 위한 기하학적 정렬을 향상시킨다.
+
+좌표 변환(Coordinate Transformation)과 캘리브레이션(Calibration)은 전체 센서 처리 아키텍처와 일관되게 적용되어야 한다. 라이다는 로봇의 중심보다 위 또는 아래에 장착될 수 있으며 차량 좌표계에 대해 특정한 이동 및 회전 오프셋을 가진다. 외부 파라미터 캘리브레이션(Extrinsic Calibration)은 이러한 변환을 정의한다. 전처리 파이프라인은 플랫폼별 가정을 코드 전체에 직접 삽입하는 것을 피하고 명시적인 변환 파라미터를 유지해야 한다. 이를 통해 서로 다른 AMR 구성, 라이다 장착 위치 및 센서 모델에 동일한 처리 프레임워크를 재사용할 수 있다.
+
+반사강도(Intensity)와 보조 속성(Auxiliary Attribute)도 전처리 과정에서 유지할 수 있다. 기하학적 좌표가 일반적으로 가장 중요한 정보이지만 반사강도는 위치추정, 표면 특성화(Surface Characterization) 및 일부 인지 방법에서 유용한 정보를 제공할 수 있다. 링 식별자(Ring Identifier)와 측정 타임스탬프는 구조화된 포인트 클라우드 처리(Organized Point-Cloud Processing), 이동 보상 또는 센서 진단(Sensor Diagnostics)을 지원할 수 있다. 따라서 다운샘플링과 필터링은 어떤 속성을 유지하고 어떻게 집계할 것인지를 정의해야 한다. 예를 들어 여러 포인트에서 중심점을 계산하는 경우 반사강도와 타임스탬프 값을 결합하는 명시적인 정책이 필요하며, 이를 단순히 폐기해서는 안 된다.
+
+시간적 필터링(Temporal Filtering)은 연속적인 스캔을 활용하여 안정성을 높일 수 있지만 센서 노이즈와 실제 환경의 움직임을 구분해야 한다. 정적인 벽과 도로 표면은 시간에 따라 공간적으로 일관성을 유지해야 하는 반면, 보행자와 차량 같은 동적 객체(Dynamic Object)는 빠르게 위치를 변경할 수 있다. 따라서 연속 스캔을 무조건 평균화하는 전처리 방식은 유령 구조(Ghost Structure)를 생성하거나 움직이는 객체를 번지게 만들 수 있다. 시간적 방법은 의도된 하위 인지 동작을 고려하여 설계해야 한다. 동적 환경에서는 포인트 클라우드의 겉보기 평활성을 최대화하는 것보다 현재 관측값을 보존하고 데이터의 시간 경과(Data Age)를 제어하는 것이 더 중요할 수 있다.
+
+라이다 해상도와 센서 수가 증가할수록 계산 효율성(Computational Efficiency)이 더욱 중요해진다. 현대적인 야외 AMR은 여러 대의 카메라와 하나 이상의 라이다 센서를 함께 사용할 수 있으며, 이로 인해 상당한 CPU, 메모리 및 네트워크 트래픽이 발생한다. 포인트 클라우드 버퍼(Point-Cloud Buffer)의 반복적인 메모리 할당과 복사는 불필요한 지연시간을 발생시킬 수 있다. 효율적인 구현에서는 사전 할당 메모리(Preallocated Memory), 연속 데이터 구조(Contiguous Data Structure), 병렬 이웃 연산(Parallel Neighborhood Operation), 공간 인덱싱(Spatial Indexing), 필요에 따른 GPU 가속(GPU Acceleration)을 사용할 수 있다. 목표는 단순히 최대한 많은 포인트를 처리하는 것이 아니라 예측 가능한 실시간 지연시간 예산(Real-Time Latency Budget) 내에서 충분히 유용한 데이터를 제공하는 것이다.
+
+전처리 파이프라인은 단순히 포인트 클라우드 배열만 반환하는 것이 아니라 데이터 품질 정보(Quality Information)도 제공해야 한다. 유용한 메타데이터에는 수신된 포인트 수, 유지된 포인트 수, 필터링된 포인트 수, 손실된 패킷 수, 처리 시간, 타임스탬프 범위, 센서 상태 및 데이터의 예상 경과 시간이 포함될 수 있다. 포인트 수나 처리 시간의 갑작스러운 변화는 오염, 통신 문제, 센서 성능 저하 또는 계산 과부하를 나타낼 수 있다. 이러한 정보는 상위 상태 모니터링(Health Monitoring) 및 고장 관리(Fault Management) 기능에서 사용할 수 있다. 따라서 전체 센서 처리 아키텍처에서는 전처리와 센서 상태 관리를 완전히 독립된 모듈로 보기보다 서로 연결된 구성요소로 취급한다.
+
+파라미터 선택(Parameter Selection)은 하나의 이상적인 데이터셋을 사용하여 최적화하기보다 대표적인 운용 조건을 기준으로 검증해야 한다. 도심 도로, 개방형 캠퍼스, 건설 현장, 식생, 반사 표면, 비, 먼지, 야간 운용 및 불규칙한 지형은 서로 매우 다른 라이다 특성을 생성할 수 있다. 깨끗한 도로에서 잘 작동하는 필터가 오프로드 환경에서는 유용한 정보를 제거할 수 있다. 따라서 평가는 기하학적 정보 보존(Geometric Preservation), 객체 유지(Object Retention), 포인트 밀도, 계산 지연시간, 위치추정 안정성 및 하위 검출 성능을 함께 검토해야 한다. 이는 라이다 전처리를 독립적인 수치 필터링 문제로 다루는 것이 아니라 시스템 수준 검증(System-Level Validation)과 직접 연결한다.
+
+야외 AMR을 위한 실용적인 라이다 전처리 체인은 원시 측정값에서 압축되고 신뢰할 수 있는 기하학적 표현(Geometric Representation)으로의 통제된 변환 과정으로 볼 수 있다. 패킷 디코딩은 관측값을 재구성하고, 좌표 변환은 일관된 좌표계를 설정하며, 거리 및 유효성 검사(Validity Check)는 명백하게 사용할 수 없는 측정값을 제거한다. 이어서 이상치 필터링은 비정상 포인트를 억제하고, 디노이징은 국부적인 일관성을 향상시키며, 이동 보상은 시간적 왜곡을 줄이고, 다운샘플링은 계산 비용을 제어한다. 이렇게 생성된 포인트 클라우드는 지면 분할, 자유공간 추정(Free-Space Estimation), 객체 검출, 위치추정, 매핑 및 다중 센서 융합을 위한 공통 입력으로 사용된다.
+
+가장 중요한 설계 원칙은 자율주행 의사결정(Autonomous Decision)에 영향을 줄 수 있는 정보를 보존하면서 주로 계산 자원만 소비하는 정보를 제거하는 것이다. 필터링, 다운샘플링 및 디노이징은 서로 독립적인 외형적 처리 과정이 아니라 자율주행 스택이 사용할 수 있는 기하학적 정보의 품질, 지연시간 및 신뢰성을 함께 결정한다. 잘 설계된 파이프라인은 설정 가능(Configurable)하고, 측정 가능(Measurable)하며, 하드웨어 독립적(Hardware-Independent)이고, 플랫폼의 움직임과 환경 조건을 고려해야 한다. 이러한 특성은 이후의 라이다 인지(LiDAR Perception)와 자율주행 기능을 위한 안정적인 기반을 제공하며, 센서 처리 장(Chapter)의 후속 구성요소와 자연스럽게 연결된다.
+
+## 03.03. Camera Preprocessing Undistortion Rectification [w/Code]
+
+![](images/image3.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+카메라 전처리(Camera Preprocessing)는 원시 카메라 프레임(Raw Camera Frame)을 자율주행 인지(Autonomous Driving Perception)에 사용할 수 있도록 기하학적으로 보정되고 수치적으로 일관된 이미지로 변환하는 단계이다. 카메라는 렌즈 왜곡(Lens Distortion), 센서 특성(Sensor Characteristics), 노출(Exposure), 노이즈(Noise), 롤링 셔터 효과(Rolling-Shutter Effect), 장착 기하구조(Mounting Geometry)의 영향을 받는 이미지 데이터를 생성한다. 객체 검출(Object Detection), 분할(Segmentation), 깊이 추정(Depth Estimation), 시각적 위치추정(Visual Localization), 카메라-라이다 융합(Camera-LiDAR Fusion)을 수행하기 전에 이러한 영향을 제어해야 한다. 따라서 전처리 파이프라인은 하위 알고리즘에 필요한 시각 정보를 보존하면서 안정적인 이미지 표현을 구축한다.
+
+파이프라인은 이미지 획득(Image Acquisition)과 디코딩(Decoding)에서 시작한다. 카메라 데이터는 플랫폼에 따라 USB, 이더넷(Ethernet), GMSL, MIPI CSI 또는 기타 하드웨어 인터페이스를 통해 전달될 수 있다. 드라이버(Driver)와 캡처 계층(Capture Layer)은 프레임 식별자(Frame Identifier), 타임스탬프(Timestamp), 노출 정보(Exposure Information), 카메라 파라미터(Camera Parameter), 이미지 형식(Image Format)을 보존해야 한다. 원시 Bayer 데이터는 디베이어링(Debayering)이 필요할 수 있으며, 압축 스트림(Compressed Stream)은 디코딩이 필요하다. 이 단계에서는 원래의 획득 타임스탬프를 보존하는 것이 중요하다. 이후 라이다(LiDAR), 레이더(Radar), 관성측정장치(IMU) 및 기타 센서와의 동기화는 정확한 시간 정보에 의존하기 때문이다.
+
+카메라 캘리브레이션(Camera Calibration)은 기하학적 왜곡을 보정하는 데 필요한 수학적 파라미터를 제공한다. 내부 캘리브레이션(Intrinsic Calibration)은 초점거리(Focal Length), 주점(Principal Point), 렌즈 왜곡 계수(Lens Distortion Coefficient)와 같은 카메라 특성을 설명하며, 외부 캘리브레이션(Extrinsic Calibration)은 다른 센서 또는 차량에 대한 카메라의 자세(Pose)를 정의한다. 이러한 파라미터는 일반적으로 알려진 표적(Target)이나 신중하게 설계된 기준 환경(Reference Environment)을 사용하는 캘리브레이션 절차를 통해 얻어진다. 캘리브레이션 품질은 이미지 기하구조에 직접적인 영향을 준다. 특히 이후 픽셀 좌표를 3차원 공간으로 투영하거나 다른 센서의 측정값과 연결할 경우 그 영향이 커진다.
+
+렌즈 왜곡은 모바일 로봇에서 일반적으로 사용되는 광각 카메라(Wide-Angle Camera)와 어안 카메라(Fisheye Camera)에서 특히 중요하다. 이상적인 핀홀 카메라(Pinhole Camera)는 단순한 투영 관계를 가정하지만 실제 렌즈에서는 방사 왜곡(Radial Distortion)과 접선 왜곡(Tangential Distortion)이 발생한다. 따라서 이미지 경계 부근의 직선이 휘어 보일 수 있으며, 이상적인 투영에 비해 객체의 겉보기 위치가 이동할 수 있다. 왜곡 보정(Undistortion)은 캘리브레이션된 카메라 모델을 적용하여 왜곡된 픽셀을 보정된 좌표로 매핑한다. 이후의 기하학적 알고리즘이 안정적인 투영 관계에서 동작할 수 있도록 전체 이미지 시퀀스에서 동일한 보정 방식이 유지되어야 한다.
+
+왜곡 보정은 일반적으로 출력 픽셀(Output Pixel)과 이에 대응하는 원본 이미지 좌표 사이의 사전 계산된 매핑(Precomputed Mapping)을 사용하여 구현한다. 매 프레임마다 모든 픽셀에 대해 왜곡 방정식을 다시 계산하는 대신, 필요한 좌표 변환을 초기화 단계에서 계산하고 런타임 동안 재사용할 수 있다. 이미지 재매핑(Image Remapping)은 보간(Interpolation)을 사용하여 보정된 픽셀 값을 생성한다. 보간 방법은 이미지 선명도와 계산 비용에 영향을 주며, 선택한 출력 해상도와 유효 이미지 영역(Valid Image Region)은 원래 시야각(Field of View) 중 어느 정도를 유지할 것인지를 결정한다.
+
+정류(Rectification)는 스테레오 쌍(Stereo Pair)으로 구성된 여러 카메라를 사용하거나 카메라 이미지를 다른 기준과 기하학적으로 정렬해야 할 때 중요하다. 스테레오 정류(Stereo Rectification)는 두 카메라의 영상을 변환하여 대응점(Corresponding Point)이 대략 동일한 이미지 행(Image Row)에 위치하도록 만들며, 이를 통해 시차 추정(Disparity Estimation)과 깊이 재구성(Depth Reconstruction)을 단순화한다. 다중 카메라 시스템에서는 일관된 정류 전략이 서로 겹치는 시야(Overlapping Field of View) 사이의 관계를 예측 가능하게 만드는 데에도 도움이 된다. 따라서 정류는 단순한 이미지 향상 작업이 아니라 캘리브레이션된 기하학적 파이프라인의 일부로 다루어야 한다.
+
+이미지 크기 조정(Resizing)과 크롭(Cropping)은 캘리브레이션 파라미터와 함께 관리되어야 한다. 신경망(Neural Network)은 특정 입력 해상도나 종횡비(Aspect Ratio)를 요구할 수 있지만, 이미지 크기를 변경하면 픽셀과 카메라 모델 사이의 관계도 변경된다. 따라서 이미지 크기 조정, 크롭, 패딩(Padding) 또는 다른 표현으로의 변환을 수행할 경우 내부 파라미터도 일관되게 스케일링하거나 변환해야 한다. 이러한 관계를 무시하면 결과 이미지가 시각적으로는 정상적으로 보이더라도 객체 위치와 투영된 3차원 좌표에 체계적인 오차(Systematic Error)가 발생할 수 있다.
+
+광도 전처리(Photometric Preprocessing)는 기하학적 왜곡보다는 밝기와 이미지 품질의 변화를 처리한다. 노출(Exposure), 게인(Gain), 화이트 밸런스(White Balance), 감마 특성(Gamma Characteristics), 센서 노이즈, 모션 블러(Motion Blur), 조명 변화(Illumination Change)는 인지 성능에 큰 영향을 줄 수 있다. 신경망 추론(Neural-Network Inference) 전에 정규화(Normalization)가 필요할 수 있으며, 적응형 노출(Adaptive Exposure)이나 카메라별 처리는 획득 계층에 더 가까운 곳에서 수행될 수 있다. 그러나 전처리는 의미 이해(Semantic Understanding)에 기여할 수 있는 그림자, 질감(Texture), 대비 경계(Contrast Boundary), 색상 정보와 같은 유용한 정보를 제거하지 않도록 해야 한다.
+
+야외 자율이동로봇(Outdoor AMR)은 조명이 빠르게 변화할 수 있기 때문에 특히 어려운 카메라 조건을 만든다. 직사광선(Direct Sunlight), 역광(Backlighting), 야간 장면(Nighttime Scene), 반사(Reflection), 비(Rain), 안개(Fog), 먼지(Dust), 인공조명(Artificial Lighting)은 연속적인 프레임 사이에 큰 차이를 만들 수 있다. 따라서 전처리 파이프라인은 안정적으로 유지되는 캘리브레이션 파라미터와 동적으로 변화할 수 있는 운용 파라미터(Operational Parameter)를 구분해야 한다. 이미지 밝기(Brightness), 포화(Saturation), 흐림(Blur), 노출(Exposure), 유효 픽셀 비율(Valid-Pixel Ratio)을 모니터링하면 카메라 품질을 나타내는 유용한 지표를 확보할 수 있으며, 상위 소프트웨어가 시각 관측의 성능 저하를 인식하도록 지원할 수 있다.
+
+카메라 전처리는 시간적 동작(Temporal Behavior)도 고려해야 한다. 하나의 프레임이 기하학적으로 정확하더라도 버퍼링(Buffering), 디코딩, 이미지 변환(Image Conversion), 과도한 복사 때문에 크게 지연된다면 실시간 자율주행에 적합하지 않을 수 있다. 파이프라인은 제한된 큐(Bounded Queue)를 유지하고 프레임 타임스탬프와 처리 지연시간(Processing Latency)을 제공해야 한다. 계산 자원이 부족해질 경우 처리 정책은 점점 오래된 이미지 큐가 누적되도록 하기보다 최신 프레임을 우선할 수 있다. 이는 현재 환경 조건에 따라 인지 의사결정을 수행하는 이동 플랫폼에서 특히 중요하다.
+
+AMR이 여러 대의 고해상도 카메라를 사용하는 경우 효율적인 구현(Efficient Implementation)이 더욱 중요해진다. 디베이어링, 왜곡 보정, 정류, 크기 조정, 정규화 및 색상 변환(Color Conversion)은 상당한 CPU와 메모리 대역폭(Memory Bandwidth)을 사용할 수 있다. 사전 계산된 룩업 테이블(Lookup Table), 벡터화 연산(Vectorized Operation), 하드웨어 이미지 처리(Hardware Image Processing), GPU 가속(GPU Acceleration), 고정 메모리(Pinned Memory), 제로 카피 데이터 경로(Zero-Copy Data Path)를 사용하면 불필요한 계산과 메모리 이동을 줄일 수 있다. 목표는 하위 인지 및 센서 융합 알고리즘에 필요한 이미지 품질을 유지하면서 예측 가능한 처리량(Throughput)과 지연시간을 확보하는 것이다.
+
+처리된 카메라 출력(Processed Camera Output)은 보정된 이미지와 관련 메타데이터(Metadata)를 함께 포함해야 한다. 유용한 정보에는 프레임 타임스탬프, 카메라 식별자, 이미지 크기, 캘리브레이션 버전(Calibration Version), 노출 상태, 처리 시간, 품질 지표(Quality Indicator)가 포함된다. 이러한 데이터는 하위 시스템이 이미지를 다른 센서 관측값과 연계하고 고장을 진단할 수 있도록 한다. 따라서 카메라 프레임은 단순한 픽셀 배열이 아니라 구조화된 측정값(Structured Measurement)으로 취급해야 한다. 이러한 접근 방식은 동기화되고 캘리브레이션된 데이터를 인지 및 상위 자율주행 기능에 제공하는 전체 센서 처리 아키텍처를 지원한다.
+
+카메라 전처리는 궁극적으로 객체 검출, 의미론적 분할(Semantic Segmentation), 깊이 추정, 위치추정, 매핑(Mapping), 다중 센서 융합을 위한 시각적 기반을 제공한다. 전체 처리 순서는 이미지 획득, 디코딩, 캘리브레이션, 왜곡 보정, 정류, 기하학적 변환(Geometric Transformation), 크기 조정 또는 크롭, 광도 정규화(Photometric Normalization), 품질 평가(Quality Assessment), 하위 소비자(Downstream Consumer)로의 전달 과정으로 이해할 수 있다. 각각의 연산은 명확한 목적과 측정 가능한 효과를 가져야 한다. 이 장의 구조에서는 카메라 전처리를 라이다 전처리 이후이면서 레이더 처리, 지면 분할(Ground Segmentation), 타임스탬프 정렬(Timestamp Alignment), 고장 처리(Fault Handling), GPU 가속, 지연시간 분석 이전에 배치하고 있으며, 이를 전체 센서 처리 파이프라인의 핵심 구성요소로 다룬다.
+
+## 03.04. Radar Signal Processing CFAR Detection [w/Code]
+
+![](images/image4.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+레이더 신호 처리(Radar Signal Processing)는 원시 무선 주파수 측정값(Raw Radio-Frequency Measurement)을 자율주행 및 야외 자율이동로봇(Outdoor AMR) 인지 시스템에서 사용할 수 있는 신뢰성 높은 표적 관측값(Target Observation)으로 변환한다. 카메라와 라이다와 달리 레이더는 전자기파 반사(Electromagnetic Reflection)를 측정하며, 광학 센서의 성능이 저하될 수 있는 조건에서도 거리(Range), 상대 속도(Relative Velocity), 각도(Angle) 정보를 제공할 수 있다. 따라서 처리 과정은 잡음이 포함된 신호 측정값을 표적 검출(Target Detection)로 변환하면서 레이더가 제공하는 물리적 특성을 보존해야 한다.
+
+레이더 프론트엔드(Radar Front End)는 일반적으로 전자기파를 송신하고 환경의 객체에서 반사되어 돌아오는 신호를 수신한다. 레이더 아키텍처에 따라 수신 신호는 레이더의 거리-도플러 표현(Range-Doppler Representation) 또는 다른 중간 신호 표현을 생성하기 전에 아날로그 및 디지털 처리 단계를 거친다. 이후 소프트웨어 파이프라인은 이러한 표현에서 의미 있는 피크(Peak) 또는 표적 후보(Target Candidate)를 추출한다. 샘플링 구성(Sampling Configuration), 파형 설계(Waveform Design), 안테나 배열(Antenna Arrangement), 대역폭(Bandwidth), 적분 시간(Integration Time)은 최종 해상도와 검출 특성에 영향을 준다.
+
+거리 추정(Range Estimation)은 송신 파형과 수신 반사 신호 사이의 관계로부터 얻어진다. 예를 들어 주파수 변조 연속파 레이더(Frequency-Modulated Continuous-Wave Radar)에서는 송신 신호와 수신 신호 사이의 주파수 차이를 표적 거리와 연관시킬 수 있다. 이렇게 얻어진 거리 정보는 레이더 측정 공간(Radar Measurement Space)의 한 축을 형성한다. 거리 해상도(Range Resolution)는 신호 대역폭의 영향을 크게 받으며, 실제 검출 성능은 신호 대 잡음비(Signal-to-Noise Ratio), 전파 환경, 안테나 특성, 처리 구성에도 영향을 받는다.
+
+도플러 처리(Doppler Processing)는 상대적인 방사 속도(Radial Velocity)에 대한 정보를 제공한다. 움직이는 객체에서 발생하는 반사 신호는 여러 측정값 또는 처프(Chirp)에 걸친 처리를 통해 추정할 수 있는 주파수 변이(Frequency Shift)를 발생시킨다. 그 결과 생성되는 거리-도플러 표현은 거리와 상대 운동에 따라 표적을 구분한다. 이러한 특성은 움직이는 차량과 보행자를 검출하고, 정적인 환경 구조물과 주변 장면과 다른 방사 속도를 가진 객체를 구분하는 데 특히 유용하다.
+
+각도 추정(Angular Estimation)은 여러 수신 채널 또는 안테나 소자의 정보를 사용하여 관측된 반사 신호의 방향을 결정한다. 빔포밍(Beamforming), 디지털 빔포밍(Digital Beamforming), 배열 처리 기법(Array-Processing Method)과 같은 방법은 여러 채널에서 얻은 측정값을 각도 응답(Angular Response)으로 변환할 수 있다. 이렇게 얻어진 거리, 속도, 각도 정보는 레이더 표적 관측값으로 결합될 수 있다. 안테나 채널의 캘리브레이션(Calibration)과 레이더 장착 자세(Mounting Pose)에 대한 정확한 정보가 중요하다. 각도 오차가 검출 객체의 추정 위치에 직접 전달되기 때문이다.
+
+표적 검출 전에 레이더 측정값에는 일반적으로 배경 잡음(Background Noise), 클러터(Clutter), 사이드로브(Sidelobe), 간섭(Interference), 관심 객체에 해당하지 않는 반사 신호가 포함된다. 고정된 검출 임계값(Fixed Detection Threshold)은 거리, 각도 및 환경 조건에 따라 배경 수준이 크게 달라질 수 있기 때문에 충분하지 않은 경우가 많다. 일정 오경보율(Constant False Alarm Rate), 즉 CFAR 검출은 국부적인 배경 통계를 추정하고 그에 따라 검출 임계값을 적응적으로 조정함으로써 이러한 문제를 해결한다. 따라서 CFAR는 연속적인 레이더 측정 공간을 이산적인 검출 후보로 변환하는 중요한 신호 처리 기법이다.
+
+CFAR의 핵심 개념은 검사 셀(Cell Under Test)을 주변의 기준 셀(Reference Cell)과 비교하는 것이다. 일반적으로 검사 셀 주변에는 보호 셀(Guard Cell)을 배치하여 잠재적인 표적 신호가 배경 추정값을 오염시키지 않도록 한다. 보호 영역 주변의 기준 셀은 국부적인 잡음 또는 클러터 수준에 대한 정보를 제공한다. 이후 이러한 국부 추정값과 목표 오경보 동작에 관련된 스케일링 계수(Scaling Factor)를 사용하여 검출 임계값을 계산한다. 검사 셀의 값이 임계값을 초과하면 해당 셀은 검출 후보가 된다.
+
+서로 다른 CFAR 전략은 국부 배경을 추정하는 방식이 서로 다르다. 셀 평균 CFAR(Cell-Averaging CFAR)은 기준 셀의 평균 수준을 이용하여 배경을 추정하며, 주변 환경이 비교적 균일한 경우 효과적이다. 최대측 CFAR(Greatest-of CFAR)와 최소측 CFAR(Smallest-of CFAR)는 클러터 전이가 발생하는 영역에서 유용할 수 있으며, 서로 다른 국부 조건에 따라 배경 정보를 선택한다. 순서 통계 CFAR(Ordered-Statistic CFAR)는 기준 셀의 값을 정렬하여 사용하며 일부 기준 셀에 강한 간섭 표적이 포함되어 있을 때 더욱 높은 강건성(Robustness)을 제공할 수 있다. 적절한 전략은 예상되는 레이더 환경과 계산 요구사항에 따라 결정된다.
+
+학습 영역(Training Window)의 크기, 보호 영역(Guard Window)의 크기, 임계값 스케일링(Threshold Scaling), 목표 오경보율(False-Alarm Rate)은 중요한 엔지니어링 설계 요소이다. 영역이 지나치게 작으면 배경 추정이 불안정해질 수 있고, 지나치게 크면 국부적인 클러터 조건을 적절하게 반영하지 못할 수 있다. 보호 영역이 지나치게 크면 사용 가능한 기준 샘플의 수가 감소하고, 반대로 보호 영역이 충분하지 않으면 표적 신호 에너지가 배경 추정값에 영향을 줄 수 있다. 따라서 이러한 파라미터는 이론적 가정만으로 결정하기보다 대표적인 레이더 데이터셋을 사용하여 평가해야 한다.
+
+CFAR 검출은 레이더 표현의 서로 다른 차원에 대해 독립적으로 수행할 수 있다. 거리 CFAR(Range CFAR)은 거리 방향의 측정값을 평가하고, 도플러 CFAR(Doppler CFAR)은 속도와 관련된 구조를 평가하며, 2차원 CFAR(Two-Dimensional CFAR)은 거리-도플러 공간의 국부적인 이웃 영역을 고려한다. 레이더 아키텍처에 따라 각도 차원도 검출 처리에 포함될 수 있다. 2차원 처리는 복잡한 장면에서 표적 분리 성능을 향상시킬 수 있지만 계산량과 파라미터 관리의 복잡성을 증가시킨다.
+
+CFAR 이후 검출된 셀은 안정적인 레이더 표적이 되기 전에 일반적으로 추가 처리가 필요하다. 서로 인접한 검출값은 동일한 물리적 반사체를 나타낼 수 있으므로 하나의 클러스터(Cluster)로 그룹화할 수 있다. 검출 클러스터링(Detection Clustering)은 근접한 거리, 속도 및 각도 측정값을 하나의 표적 가설(Target Hypothesis)로 결합할 수 있다. 동일한 객체에서 생성된 여러 검출값을 줄이기 위해 피크 선택(Peak Selection)을 적용할 수도 있다. 최종 표적 표현에는 위치(Position), 방사 속도(Radial Velocity), 신호 강도(Signal Strength), 신뢰도(Confidence) 및 기타 레이더 관련 속성이 포함될 수 있다.
+
+레이더 측정값은 다중경로 반사(Multipath Reflection)와 확장 표적(Extended Target)의 영향을 받는다. 대형 차량은 하나의 집중된 검출값이 아니라 여러 개의 강한 반사점(Reflection Point)을 생성할 수 있으며, 건물, 가드레일, 도로 표면 및 식생은 분산된 클러터를 생성할 수 있다. 다중경로 현상은 실제 물리적 객체와 직접 대응하지 않는 위치에 가상 표적처럼 보이는 검출을 생성할 수도 있다. 따라서 신호 처리 과정에서 모든 검출값을 서로 독립적인 객체로 취급해서는 안 된다. 이후의 추적(Tracking)과 다중 센서 융합(Multi-Sensor Fusion)은 이러한 측정값을 해석하는 데 추가적인 공간적 및 시간적 맥락을 제공할 수 있다.
+
+여러 레이더 센서가 동일한 환경에서 동작함에 따라 간섭 관리(Interference Management)의 중요성이 증가하고 있다. 다른 레이더 시스템, 통신 장비 또는 내부 전자 장치에서 발생하는 신호는 추가적인 피크를 생성하거나 배경 통계를 왜곡할 수 있다. 따라서 레이더 처리 과정에는 CFAR 검출 전에 간섭 식별(Interference Identification), 억제(Suppression), 필터링(Filtering), 품질 평가(Quality Assessment)가 포함될 수 있다. 구체적인 방법은 레이더 파형과 하드웨어 아키텍처에 크게 의존하므로 처리 파이프라인은 실제 환경 반사와 성능이 저하된 측정값을 구분할 수 있도록 충분한 진단 정보를 제공해야 한다.
+
+캘리브레이션과 좌표 변환(Coordinate Transformation)은 레이더 검출값을 차량 좌표계(Vehicle Coordinate System)에 연결한다. 레이더 측정값은 본질적으로 레이더 센서에 대한 상대 좌표로 표현되는 반면, 상위 자율주행 기능은 일관된 차량 또는 월드 기준 좌표(World Reference Coordinate)를 필요로 한다. 외부 캘리브레이션(Extrinsic Calibration)은 로봇에 대한 레이더의 자세를 정의하며, 이후 검출 위치를 필요한 좌표계로 변환할 수 있다. 또한 레이더 검출값은 이후 카메라 이미지, 라이다 포인트 클라우드, 관성측정장치 측정값 및 위치추정 상태와 연계될 수 있으므로 타임스탬프 정보가 보존되어야 한다.
+
+레이더 전처리는 가능한 경우 불확실성 정보(Uncertainty Information)를 유지해야 한다. 거리, 속도 및 각도 측정값은 서로 다른 오차 특성을 가지며, 신호 강도, 표적 형상, 환경 조건에 따라 불확실성이 달라질 수 있다. 모든 검출값을 동일하게 신뢰할 수 있는 것으로 표현하기보다 처리 파이프라인에서 측정값과 함께 신뢰도 또는 품질 지표(Quality Indicator)를 제공할 수 있다. 이후의 추적과 센서 융합에서는 개별 레이더 관측값의 신뢰성을 고려하여 객체 상태(Object State)를 추정할 수 있다.
+
+야외 AMR에서 레이더는 비, 어둠, 먼지 및 기타 광학 인지 시스템을 어렵게 만드는 조건에서 중요한 보완 정보를 제공할 수 있다. 그러나 레이더를 라이다나 카메라를 완전히 대체할 수 있는 보편적인 센서로 취급해서는 안 된다. 레이더 반사 특성은 시각 정보 및 기하학적 관측과 크게 다르며, 일부 객체는 약하거나 모호한 반사 신호를 생성할 수 있다. 따라서 강건한 아키텍처는 레이더를 이종 센서 시스템(Heterogeneous Sensing System)의 하나의 구성요소로 사용하고, 각 센서의 물리적 장점과 한계에 따라 측정값을 결합한다.
+
+실시간 성능(Real-Time Performance)을 확보하려면 계산 비용과 처리 지연시간(Processing Latency)을 신중하게 관리해야 한다. 거리-도플러 변환, 빔포밍, CFAR 탐색, 클러스터링 및 좌표 변환은 채널 수와 측정 해상도가 증가할수록 계산량이 커질 수 있다. 독립적인 거리, 도플러 또는 공간 셀에 자연스럽게 매핑되는 연산은 병렬 처리(Parallel Processing)를 통해 가속할 수 있다. 동시에 메모리 전송, 동기화 오버헤드(Synchronization Overhead), 데이터 이동(Data Movement)도 전체 종단 간 지연시간 분석에 포함해야 하며, 개별 알고리즘만 독립적으로 평가해서는 안 된다.
+
+레이더 품질 모니터링(Radar Quality Monitoring)은 신호 처리 파이프라인과 함께 수행되어야 한다. 유용한 지표에는 수신 신호 통계(Received Signal Statistics), 잡음 수준(Noise Level), 검출 수(Detection Count), 처리 지연시간, 타임스탬프 연속성(Timestamp Continuity), 채널 상태(Channel Health), 간섭 지표(Interference Indicator), 검출 표적 분포가 포함될 수 있다. 이러한 측정값의 급격한 변화는 센서 오염, 하드웨어 성능 저하, 통신 문제 또는 환경 변화의 신호일 수 있다. 이러한 정보는 전체 센서 상태 관리(Sensor Health Management) 및 고장 관리(Fault Management) 아키텍처로 전달되어 상위 자율주행 기능이 적절하게 대응하도록 할 수 있다.
+
+전체 처리 흐름은 전자기 측정값(Electromagnetic Measurement)을 구조화된 표적 관측값으로 변환하는 과정으로 볼 수 있다. 신호 획득(Signal Acquisition)은 원시 측정값을 제공하고, 거리 및 도플러 처리는 거리와 상대 운동을 결정하며, 각도 처리는 방향을 추정한다. 이후 배경 추정(Background Estimation)은 국부적인 잡음과 클러터를 평가하고, CFAR는 적응형 검출 후보를 생성하며, 클러스터링과 피크 선택은 여러 측정값을 통합한다. 마지막으로 캘리브레이션은 결과 표적을 차량 좌표계로 변환한다. 이 전체 과정에서 품질 정보와 타임스탬프는 검출값과 함께 유지되어야 한다.
+
+최종적으로 생성된 레이더 검출값은 객체 검출, 추적, 속도 추정(Velocity Estimation), 예측(Prediction), 다중 센서 융합을 위한 공통 입력으로 사용된다. 레이더의 가장 큰 가치는 직접적인 상대 속도 정보를 제공하고 열악한 환경에서도 동작할 수 있다는 특성을 라이다의 기하학적 세부정보와 카메라의 의미론적 정보(Semantic Information)와 결합할 때 나타난다. 센서 처리 장(Sensor-Processing Chapter)에서 레이더 신호 처리와 CFAR 검출은 따라서 저수준 전자기 측정값과 고수준 자율주행 인지 기능을 연결하는 역할을 한다. 장의 구조에서는 이 주제를 라이다 및 카메라 전처리 이후, 지면 분할(Ground Segmentation), 타임스탬프 정렬(Timestamp Alignment), 센서 고장 처리(Sensor-Failure Handling), GPU 가속, 지연시간 분석(Latency Analysis), 통합 야외 AMR 센서 처리(Integrated Outdoor AMR Sensor Processing) 이전에 배치하고 있다.
+
+## 03.05. Point Cloud Ground Segmentation Algorithms [w/Code]
+
+![](images/image5.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+지면 분할(Ground Segmentation)은 3차원 라이다 포인트 클라우드(3D LiDAR Point Cloud)에서 지면과 유사한 표면(Ground-Like Surface)과 지면이 아닌 구조물(Non-Ground Structure)을 분리하는 과정이다. 자율주행 시스템(Autonomous Driving System)이나 야외 자율이동로봇(Outdoor AMR)에서 이러한 구분은 장애물 검출(Obstacle Detection), 자유공간 추정(Free-Space Estimation), 주행 가능성 분석(Traversability Analysis), 위치추정(Localization), 매핑(Mapping)을 위한 중요한 기하학적 기반을 제공한다. 도로, 보도, 경사로, 토양 및 기타 지형 표면은 일반적으로 연속적인 공간 구조를 형성하는 반면, 차량, 보행자, 건물, 식생, 연석 및 장비는 이러한 표면보다 높게 존재하거나 다른 기하학적 특성을 가진다. 지면 분할 알고리즘은 변화하는 지형에서도 이러한 차이를 효율적이고 강건하게 식별해야 한다.
+
+지면 분할의 입력은 일반적으로 이미 전처리된 포인트 클라우드(Preprocessed Point Cloud)이며, 이 과정에서 유효하지 않은 측정값, 과도한 노이즈 및 불필요한 포인트 밀도가 이미 감소되어 있다. 각 포인트는 공간 좌표(Spatial Coordinate)로 표현되며 반사강도(Intensity), 링(Ring), 타임스탬프(Timestamp) 또는 기타 속성을 포함할 수 있다. 알고리즘은 먼저 높이와 표면 기하구조(Surface Geometry)를 평가할 좌표계를 설정한다. 차량 중심 좌표계(Vehicle-Centered Frame)에서는 수직축(Vertical Axis)이 일관되게 정의되어야 한다. 많은 지면 모델이 로봇을 기준으로 한 높이에 직접 의존하기 때문이다. 따라서 정확한 센서 캘리브레이션(Sensor Calibration)과 이동 보상(Motion Compensation)은 신뢰성 높은 분할을 위한 선행 조건이다.
+
+가장 단순한 지면 분할 방법은 고정 높이 임계값(Fixed Height Threshold)을 사용하는 것이다. 미리 정의된 고도보다 낮은 포인트는 지면으로 분류하고, 그보다 높은 포인트는 지면이 아닌 것으로 처리한다. 이 방법은 계산 비용이 낮으며 센서 장착 높이와 지형 고도가 비교적 안정적인 평탄하고 통제된 환경에서 효과적으로 동작할 수 있다. 그러나 고정 임계값은 경사면, 경사로, 불규칙한 도로, 연석, 제방 및 오프로드 지형에서 신뢰성이 떨어진다. 또한 서스펜션 움직임이나 플랫폼 자세 변화로 인해 차량 본체가 지면에 대해 크게 움직이는 경우에도 문제가 발생할 수 있다.
+
+보다 유연한 방법은 지면 표면(Ground Surface)을 명시적으로 모델링하는 것이다. 평면 피팅(Plane Fitting) 방법은 포인트 클라우드에서 하나의 표면을 추정하고 추정된 평면으로부터의 거리에 따라 포인트를 분류한다. RANSAC 기반 평면 피팅(RANSAC-Based Plane Fitting)은 상당한 수의 지면이 아닌 이상치(Non-Ground Outlier)가 존재하는 상황에서도 지배적인 평면 구조를 추정할 수 있기 때문에 널리 사용된다. 이 방법은 포장도로와 같은 비교적 평탄한 표면에서 효과적이지만 강한 곡률, 경사, 계단 또는 불규칙한 지형을 하나의 평면으로 충분히 표현하기 어렵다. 따라서 야외 AMR은 복잡한 환경에서 전역 평면 모델보다 국부적으로 적응하는 지면 모델(Local Adaptive Ground Model)을 필요로 하는 경우가 많다.
+
+그리드 기반 방법(Grid-Based Method)은 주변 환경을 2차원 셀(Cell)로 나누고 각 셀 내부의 지면 고도를 추정한다. 포인트 클라우드는 하향식 표현(Top-Down Representation)으로 투영되며 각 그리드 영역에 대해 국부적인 높이 통계(Height Statistics) 또는 표면 모델을 계산한다. 이후 인접한 셀을 분석하여 고도 연속성(Elevation Continuity)과 경사를 평가할 수 있다. 이러한 표현은 복잡한 3차원 분할 문제를 구조화된 공간 문제로 변환하기 때문에 유용하다. 또한 점유 격자(Occupancy Grid), 고도 지도(Elevation Map), 주행 가능성 추정(Traversability Estimation), 지역 계획(Local Planning) 모듈에서 직접 사용할 수 있는 출력 형태를 제공한다.
+
+국부 경사(Local Slope)와 높이 차이(Height Difference)는 분류를 위한 중요한 기하학적 정보를 제공한다. 지면 표면은 일반적으로 비교적 연속적인 고도 변화를 나타내는 반면, 장애물은 급격한 수직 변화를 만든다. 따라서 분할 알고리즘은 인접한 포인트 또는 그리드 셀 사이의 높이 차이를 평가하고 추정된 경사를 사전에 정의된 한계값과 비교할 수 있다. 그러나 허용 가능한 경사도는 운용 환경에 따라 달라진다. 포장도로에 적합한 임계값은 가파르지만 주행 가능한 야외 경사로를 장애물로 잘못 분류할 수 있으며, 반대로 오프로드 지형을 위해 설정된 임계값은 위험한 수직 구조물을 지면으로 처리할 수 있다.
+
+점진적 형태학적 필터링(Progressive Morphological Filtering)은 지형과 높게 솟은 구조물을 분리하는 또 다른 방법이다. 포인트 클라우드는 고도 표면(Elevation Surface)으로 표현할 수 있으며, 증가하는 크기의 구조 요소(Structuring Element)를 사용하여 형태학적 연산(Morphological Operation)을 적용한다. 작은 높이 구조물은 더 넓은 지형 표면과 점진적으로 구분할 수 있다. 이 방법은 도로, 식생 및 인공 구조물이 혼재하는 환경에서 유용할 수 있다. 지형과 장애물이 서로 다른 공간적 규모(Spatial Scale)를 가지기 때문이다. 그러나 성능은 적절한 윈도우 크기(Window Size)와 고도 임계값에 크게 의존한다.
+
+스캔 라인 방법(Scan-Line Method)은 많은 회전식 라이다 센서(Rotating LiDAR Sensor)가 갖는 구조화된 특성을 활용한다. 개별 레이저 링(Laser Ring)에 속하는 포인트를 순차적으로 처리하여 각 스캔 라인을 따라 국부적인 고도와 경사 관계를 평가할 수 있다. 알고리즘이 센서의 자연스러운 데이터 획득 구조를 따르기 때문에 계산 효율성이 높을 수 있다. 그러나 스캔 라인 방법은 희소 샘플링(Sparse Sampling), 센서 방향, 급격한 지형, 스캔 패턴을 방해하는 객체에 민감할 수 있다. 따라서 센서마다 동일한 동작을 가정하기보다 특정 라이다 구성에 따라 평가해야 한다.
+
+야외 AMR에서는 지면 분할이 차량의 변화하는 자세를 고려해야 한다. 로봇이 불규칙한 지형을 통과할 때 피치(Pitch)와 롤(Roll)이 크게 변할 수 있으며, 물리적으로 지형이 연속적으로 유지되더라도 센서 좌표계에서 관측되는 지면의 높이는 달라질 수 있다. 관성측정장치(IMU) 측정값과 차량 자세 추정(Vehicle Pose Estimation)을 사용하여 포인트 클라우드를 안정화된 기준 좌표계(Stabilized Reference Frame)로 변환할 수 있다. 이를 통해 플랫폼의 움직임이 지형의 기하구조로 잘못 해석되는 것을 줄이고 연속적인 스캔 사이의 일관성을 향상시킬 수 있다.
+
+음의 장애물(Negative Obstacle)은 특별한 주의가 필요하다. 기존의 지면 분할은 주로 라이다가 물리적으로 관측할 수 있는 표면을 식별하기 때문이다. 구덩이, 홀, 낭떠러지 및 갑작스러운 함몰은 일반적인 높아진 장애물 클러스터를 생성하지 않을 수 있다. 따라서 추정된 지면보다 높은 포인트만 검색하는 분할 시스템은 위험한 지형 불연속(Terrain Discontinuity)을 인식하지 못할 수 있다. 이러한 이유로 지면 모델링은 누락된 반사(Missing Return), 고도 불연속 및 예상되는 지형 연속성에 관한 정보를 보존해야 하며, 이후의 음의 장애물 검출(Negative-Obstacle Detection)이 위험한 함몰을 식별할 수 있도록 해야 한다.
+
+연석(Curb)과 작은 높이 변화(Small Elevation Change)는 또 다른 중요한 경계 조건이다. 연석은 도로 표면보다 몇 센티미터 또는 수십 센티미터만 높을 수 있지만, 휠 직경, 서스펜션 스트로크(Suspension Travel), 목표 주행 가능성에 따라 AMR에서 중요한 장애물이 될 수 있다. 분할 임계값이 지나치게 관대하면 연석이 지면 모델에 흡수될 수 있다. 반대로 지나치게 엄격하면 일반적인 도로 거칠기(Road Roughness)가 과도한 허위 장애물(False Obstacle)을 생성할 수 있다. 따라서 지면 분할은 차량의 물리적 이동 특성과 하위 주행 가능성 요구사항을 함께 고려하여 설계해야 한다.
+
+동적 객체(Dynamic Object)는 일반적으로 지면 모델에 포함해서는 안 된다. 차량, 보행자, 자전거, 동물 및 이동 장비는 원래 지면이 존재하는 영역을 일시적으로 점유할 수 있다. 이러한 포인트가 지속적인 지형 모델(Persistent Terrain Model)을 업데이트하는 데 사용되면 추정된 지면 표면이 오염될 수 있다. 시간적 일관성 검사(Temporal Consistency Check)와 객체 인식 필터링(Object-Aware Filtering)은 동적 구조물이 장기적인 지형 추정에 영향을 미치는 것을 방지하는 데 도움을 줄 수 있다. 이는 지면 분할이 독립적인 포인트 클라우드 필터가 아니라 전체 인지 아키텍처와 연결되어야 하는 이유이기도 하다.
+
+분할 방법의 선택은 운용 환경과 계산 제약조건(Computational Constraint)을 반영해야 한다. 고정 임계값은 단순하지만 적응성이 제한적이다. 평면 피팅은 평탄한 환경에서 유용한 기하학적 모델을 제공하지만 복잡한 지형에서는 제한적이다. 그리드 기반 방법과 국부 표면 방법(Local Surface Method)은 더 높은 적응성을 제공하며, 형태학적 방법과 스캔 라인 기법은 특정 공간 구조 또는 센서 구조를 활용할 수 있다. 실제 시스템에서는 여러 원리를 결합한 하이브리드 방법(Hybrid Method)을 사용할 수 있다. 예를 들어 초기화를 위해 거친 지면 모델을 사용한 후 어려운 지형 경계 영역에서 국부적인 정밀화를 수행할 수 있다.
+
+지면 분할은 그 결과가 후속 장애물 및 자유공간 처리에 직접 영향을 줄 수 있기 때문에 엄격한 실시간 예산(Real-Time Budget) 내에서 동작해야 한다. 고해상도 라이다는 높은 빈도로 대규모 포인트 클라우드를 생성할 수 있으므로 비효율적인 이웃 연산(Neighborhood Operation)은 높은 계산 비용을 발생시킬 수 있다. 공간 인덱싱(Spatial Indexing), 구조화된 포인트 클라우드 접근(Organized Point-Cloud Access), 병렬 처리(Parallel Processing), GPU 가속(GPU Acceleration)을 적절히 사용하면 계산 비용을 줄일 수 있다. 그러나 가속 성능은 종단 간 지연시간(End-to-End Latency)을 기준으로 평가해야 한다. 메모리 전송, 동기화 및 하위 데이터 변환이 개별 분할 커널의 성능 향상을 상쇄할 수 있기 때문이다.
+
+품질 평가는 단순한 포인트 단위 분류 정확도(Point-Wise Classification Accuracy)를 넘어야 한다. 중요한 평가 지표에는 지면 정밀도(Ground Precision), 지면 재현율(Ground Recall), 장애물 보존(Obstacle Preservation), 경계 정확도(Boundary Accuracy), 처리 지연시간, 포인트 감소율(Point Reduction), 연속 프레임 간 안정성이 포함된다. 야외 AMR에서는 평탄한 포장도로, 경사면, 경사로, 거친 지형, 자갈, 잔디, 연석, 식생, 건설 현장 및 변화하는 기상 조건을 포함하여 시험해야 한다. 목적은 제한된 벤치마크 환경에서의 성능을 극대화하는 것이 아니라 실제 자율주행 기능에 유용한 분할 결과를 확보하는 것이다.
+
+생성된 지면 및 비지면 표현(Ground and Non-Ground Representation)은 여러 하위 기능으로 전달될 수 있다. 지면 포인트는 고도 추정, 위치추정, 매핑 및 지형 모델링(Terrain Modeling)을 지원할 수 있으며, 비지면 포인트는 장애물 검출과 객체 인지를 지원할 수 있다. 압축된 지면 모델은 주행 가능 영역 추정(Drivable-Area Estimation)과 주행 가능성 분석에도 기여할 수 있다. 이러한 소비자들은 서로 다른 요구사항을 가지므로, 더 풍부한 표현이 유용한 경우 결과를 단순한 이진 레이블(Binary Label) 하나로 축소하기보다 충분한 기하학적 정보를 보존해야 한다.
+
+야외 AMR에서 지면 분할은 라이다 전처리와 고수준 인지 사이에 위치하는 적응형 기하학적 해석 계층(Adaptive Geometric Interpretation Layer)으로 이해하는 것이 가장 적절하다. 이 과정은 캘리브레이션되고 이동 보상된 포인트 클라우드에서 시작하여 국부 또는 전역 지형 구조를 추정하고, 높이, 경사, 연속성 또는 표면 모델의 일관성에 따라 포인트를 분리하며, 관련 품질 정보와 함께 지면 및 비지면 표현을 생성한다. 선택된 방법은 물리적 환경, 차량 동역학(Vehicle Dynamics), 라이다 특성 및 계산 자원에 적응해야 한다.
+
+이 장의 구조에서는 포인트 클라우드 지면 분할을 라이다 전처리, 카메라 전처리 및 레이더 신호 처리 이후에 배치하고, 센서 타임스탬프 정렬(Sensor Timestamp Alignment), 센서 고장 처리(Sensor-Failure Handling), GPU 가속 처리, 지연시간 분석 및 통합 야외 AMR 센서 처리 이전에 배치한다. 이러한 배치는 지면 분할이 3차원 측정값을 이후의 자율주행 인지를 위한 지형 인지 정보(Terrain-Aware Information)로 변환하는 기하학적 처리 단계라는 역할을 반영한다. 강건한 구현은 설정 가능(Configurable)하고, 측정 가능(Measurable)하며, 계산 효율적(Computationally Efficient)이어야 하고, 지형 경계 주변에서는 충분히 보수적으로 동작하여 안전하고 신뢰성 높은 야외 AMR 운용을 지원해야 한다.
+
+## 03.06. Sensor Timestamp Alignment and Interpolation [w/Code]
+
+![](images/image6.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+센서 타임스탬프 정렬(Sensor Timestamp Alignment)은 카메라(Camera), 라이다(LiDAR), 레이더(Radar), 관성측정장치(IMU), 위성항법시스템(GNSS) 수신기, 휠 인코더(Wheel Encoder) 및 기타 센서에서 생성되는 측정값 사이에 일관된 시간적 관계(Temporal Relationship)를 확립하는 과정이다. 이러한 장치들은 서로 다른 주파수로 동작하며 서로 다른 시점에 관측값을 획득한다. 시간적 정렬이 이루어지지 않으면 서로 다른 물리적 상태를 나타내는 측정값이 동시에 측정된 것처럼 결합되어 공간 오차, 잘못된 움직임 추정, 불안정한 융합(Fusion), 자율주행 성능 저하를 발생시킬 수 있다.
+
+각 센서는 이상적으로 실제 물리적 측정 이벤트(Physical Measurement Event)가 발생한 시점에 최대한 가까운 타임스탬프(Timestamp)를 할당해야 한다. 네트워크 전송이나 소프트웨어 처리 이후에 생성된 타임스탬프는 획득 시간(Acquisition Time)이 아니라 도착 시간(Arrival Time)을 나타내며, 가변적인 통신 및 스케줄링 지연을 포함할 수 있다. 따라서 지원 가능한 경우 하드웨어 타임스탬핑(Hardware Timestamping)이 더욱 정확한 시간 기준을 제공한다. 센서 처리 아키텍처는 획득 타임스탬프를 로컬 소프트웨어 시간으로 반복적으로 대체하지 않고 드라이버, 미들웨어(Middleware), 전처리, 기록 및 하위 융합 과정까지 유지해야 한다.
+
+다중 센서 플랫폼(Multi-Sensor Platform)은 여러 개의 독립적인 클록(Clock)을 포함할 수 있다. 카메라, 라이다, 레이더, 임베디드 제어기(Embedded Controller), GNSS 수신기 및 컴퓨팅 장치는 각각 자체 오실레이터(Oscillator)를 유지할 수 있으며, 이로 인해 서로 다른 시간 도메인(Time Domain) 사이에 오프셋(Offset)과 드리프트(Drift)가 발생한다. 클록 오프셋(Clock Offset)은 클록 사이의 초기 시간 차이를 나타내며, 클록 드리프트(Clock Drift)는 이러한 차이가 시간에 따라 점진적으로 변화하도록 만든다. 따라서 동기화 메커니즘은 공통 시간 원점(Common Time Origin)을 확립할 뿐만 아니라 장시간 운용에서도 지속적인 시간 일치를 유지해야 한다.
+
+하드웨어 동기화(Hardware Synchronization)는 시간적 불확실성을 줄이는 하나의 방법을 제공한다. 트리거 라인(Trigger Line)을 사용하면 여러 센서가 공유된 타이밍 이벤트(Shared Timing Event)를 기준으로 측정값을 획득하도록 할 수 있으며, GNSS의 초당 펄스(Pulse Per Second)는 정밀한 주기적 시간 기준을 제공할 수 있다. 정밀 시간 프로토콜(Precision Time Protocol)과 관련 네트워크 동기화 메커니즘은 이더넷으로 연결된 장치에 공통 클록을 배포할 수 있다. 적절한 동기화 방식은 센서 기능, 네트워크 아키텍처, 요구 정확도 및 하위 알고리즘의 시간 민감도에 따라 결정된다.
+
+센서를 동시에 트리거할 수 없거나 측정값이 본질적으로 서로 다른 주기로 동작하는 경우 소프트웨어 동기화(Software Synchronization)가 필요하다. 동기화 모듈(Synchronization Module)은 시간순으로 정렬된 버퍼(Time-Ordered Buffer)를 유지하고 타임스탬프에 따라 측정값을 연계한다. 정확 동기화(Exact Synchronization)는 매우 작은 허용 범위 내에서 타임스탬프가 일치하도록 요구하는 반면, 근사 동기화(Approximate Synchronization)는 허용 가능한 시간 구간 내의 측정값을 선택한다. 이러한 허용 오차는 구현 편의성만을 기준으로 설정하지 않고 차량 동역학(Vehicle Dynamics)과 알고리즘 요구사항을 기반으로 결정해야 한다.
+
+센서 주파수가 서로 다르기 때문에 실제 시스템에서는 정확한 시간적 대응이 불가능한 경우가 많다. 카메라는 30 Hz, 라이다는 10 또는 20 Hz, 관성측정장치는 수백 Hz, GNSS는 이보다 훨씬 낮은 주파수로 동작할 수 있다. 모든 센서가 동일한 주기로 동작하도록 강제하는 대신 처리 파이프라인은 하나의 기준 타임스탬프(Reference Timestamp)를 선택하고 해당 시점에서 다른 측정값의 상태를 추정할 수 있다. 이러한 접근 방식은 각 센서의 고유한 특성을 유지하면서 센서 융합을 위한 시간적으로 일관된 정보를 제공한다.
+
+보간(Interpolation)은 알려진 두 타임스탬프 사이의 측정값 또는 상태를 추정한다. 온도나 단순한 센서 상태와 같은 스칼라 값(Scalar Value)의 경우 선형 보간(Linear Interpolation)으로 충분할 수 있다. 움직임이 부드러운 경우 짧은 시간 간격에 대해 차량 위치도 보간할 수 있지만, 선택한 운동 모델(Motion Model)은 요구되는 정확도를 반영해야 한다. 보간은 새로운 물리적 관측값을 생성하는 것으로 해석해서는 안 된다. 보간은 이용 가능한 측정값으로부터 중간 상태를 추정하는 것이므로 시간 간격과 운동 동역학(Motion Dynamics)에 따른 불확실성을 포함한다.
+
+자세 보간(Orientation Interpolation)은 회전을 오일러 각(Euler Angle) 각각에 대해 독립적으로 보간하는 방식으로는 일반적으로 정확하게 처리할 수 없기 때문에 특별한 방법이 필요하다. 쿼터니언 기반 보간(Quaternion-Based Interpolation)은 3차원 자세를 표현하는 데 더욱 적절한 방법을 제공한다. 구면 선형 보간(Spherical Linear Interpolation)은 유효한 회전 기하구조를 유지하면서 두 자세 상태 사이의 중간 회전을 추정할 수 있다. 이는 약간 다른 타임스탬프에서 추정된 차량 자세를 사용하여 카메라, 라이다 또는 레이더 관측값을 변환해야 할 때 유용하다.
+
+고주파 관성측정장치(IMU) 측정값은 각속도(Angular Velocity)와 선형 가속도(Linear Acceleration)를 높은 빈도로 제공하기 때문에 시간 정렬에서 중요한 역할을 한다. IMU 적분(IMU Integration) 또는 사전적분(Preintegration)을 사용하면 저주파 센서 측정값 사이의 움직임을 추정할 수 있으며, 이를 통해 라이다 디스큐잉(LiDAR Deskewing), 이미지 이동 보상(Image Motion Compensation), 상태 전파(State Propagation)를 지원할 수 있다. 그러나 관성 측정값에는 바이어스(Bias)와 적분 오차가 누적된다. 따라서 타임스탬프 정확도는 IMU 캘리브레이션, 바이어스 추정 및 이동 보상에 사용되는 상태 추정기(State Estimator)의 품질과 밀접하게 연결된다.
+
+라이다 동기화(LiDAR Synchronization)는 하나의 완전한 스캔이 순간적으로 획득되는 것이 아니라 일정한 시간 구간에 걸쳐 획득된다는 점에서 독특한 문제를 가진다. 따라서 개별 포인트 또는 패킷은 서로 다른 획득 시간을 가질 수 있다. 차량이 스캔 도중 움직이는 상황에서 전체 포인트 클라우드를 하나의 동일한 타임스탬프에 획득된 것으로 처리하면 기하학적 왜곡(Geometric Distortion)이 발생한다. 포인트 수준(Point-Level) 또는 패킷 수준(Packet-Level)의 시간 정보와 추정된 자차 운동(Ego Motion)을 결합하면 측정값을 공통 기준 시간으로 변환하여 왜곡이 보정된 포인트 클라우드(Deskewed Point Cloud)를 생성할 수 있다.
+
+카메라 타이밍(Camera Timing)은 노출(Exposure)과 센서 판독(Readout)에 관련된 세부적인 특성도 포함한다. 글로벌 셔터 카메라(Global-Shutter Camera)는 대략 하나의 공통 노출 구간에서 이미지를 획득하는 반면, 롤링 셔터 카메라(Rolling-Shutter Camera)는 서로 다른 행(Row)을 서로 다른 시점에 노출한다. 빠르게 이동하는 플랫폼에서는 명목상의 프레임 타임스탬프가 정확하더라도 이러한 시간적 구조로 인해 기하학적 왜곡이 발생할 수 있다. 따라서 정확한 융합을 위해서는 이미지에 연결된 타임스탬프뿐만 아니라 노출 타이밍, 판독 방향(Readout Direction), 프레임 획득 특성(Frame Acquisition Characteristics)에 대한 정보가 필요할 수 있다.
+
+레이더 측정값 역시 측정 시간(Measurement Time)에 대한 명확한 정의가 필요하다. 하나의 레이더 처리 주기(Radar Processing Cycle)는 검출 목록(Detection List)이 생성되기 전에 여러 처프(Chirp)와 신호 처리 단계를 포함할 수 있다. 소프트웨어가 검출 목록을 수신하는 시점은 실제 전자기 측정값이 나타내는 시간과 상당히 다를 수 있다. 따라서 레이더 인터페이스는 획득 시간과 처리 또는 발행 시간(Publication Time)을 구분해야 하며, 이를 통해 검출된 표적을 차량 움직임 및 다른 센서의 관측값과 정확하게 연계할 수 있다.
+
+비동기 센서 정렬(Asynchronous Sensor Alignment)을 위해서는 버퍼링(Buffering)이 필요하지만, 이는 추가적인 지연시간(Latency)을 발생시킨다. 동기화 모듈은 동기화된 측정값 집합을 구성하기 전에 느리거나 지연된 센서의 측정값을 기다려야 할 수 있다. 지나치게 오래 기다리면 시간적으로는 일관되지만 오래된 데이터가 생성되고, 충분히 기다리지 않으면 측정값 연계 누락이 증가할 수 있다. 따라서 실제 시스템에서는 제한된 버퍼(Bounded Buffer), 최대 대기 시간(Maximum Waiting Time), 동기화 허용 오차(Synchronization Tolerance), 만료 정책(Expiration Policy)을 정의한다. 실시간 자율주행에서는 시간적 대응성과 정보 최신성(Freshness) 사이의 균형이 필요하다.
+
+원하는 기준 시점에 해당하는 측정값을 아직 사용할 수 없는 경우 외삽(Extrapolation)이 필요할 수 있다. 보간과 달리 외삽은 가장 최근에 알려진 상태 이후를 예측하기 때문에 예측 구간이 길어질수록 불확실성이 증가한다. 속도 또는 관성 정보를 이용한 단기 자세 전파(Short-Term Pose Propagation)는 지연 보상(Latency Compensation)에 유용할 수 있지만 장시간 외삽은 피해야 한다. 시스템은 외삽 시간(Extrapolation Age)을 명시적으로 추적하고 운동 모델의 유효성 가정을 초과하면 해당 예측을 거부해야 한다.
+
+타임스탬프 검증(Timestamp Validation)은 센서 상태 모니터링(Sensor Health Monitoring)에 통합되어야 한다. 비단조 타임스탬프(Non-Monotonic Timestamp), 중복 시간, 갑작스러운 클록 변화, 과도한 드리프트, 누락된 시퀀스 또는 획득 시간과 도착 시간 사이의 비현실적인 차이는 동기화 장애를 나타낼 수 있다. 이러한 장애는 개별 측정값의 수치 자체를 변경하지 않더라도 다중 센서 융합을 심각하게 손상시킬 수 있다. 따라서 처리 파이프라인은 시간적 무결성(Temporal Integrity)을 지속적으로 모니터링하고 동기화 품질(Synchronization Quality)을 하위 모듈에 제공해야 한다.
+
+시간적 불확실성(Temporal Uncertainty)은 단순한 소프트웨어 수준의 문제가 아니라 측정 불확실성(Measurement Uncertainty)의 일부로 다루어야 한다. 타임스탬프 오차는 차량과 객체의 움직임에 따라 공간 오차(Spatial Error)로 변환된다. 차량 속도나 각속도(Angular Rate)가 높을수록 작은 시간 오프셋도 상당한 투영 오차(Projection Error) 또는 연계 오차(Association Error)를 발생시킬 수 있다. 따라서 허용 가능한 동기화 오차는 플랫폼 속도, 센서 기하구조, 인지 해상도(Perception Resolution), 요구되는 위치추정 또는 융합 정확도를 기반으로 결정해야 한다.
+
+기록 및 재생 시스템(Recording and Replay System)은 실시간 운용에서 사용하는 것과 동일한 시간 의미론(Temporal Semantics)을 보존해야 한다. 가능한 경우 센서 데이터는 획득 타임스탬프, 클록 도메인 정보 및 관련 동기화 메타데이터(Synchronization Metadata)와 함께 기록해야 한다. 재생 과정에서 원래의 시간적 관계를 유지하면 개발자가 융합 동작을 재현하고 동기화 문제를 진단할 수 있다. 타임스탬프를 인위적으로 재생 시간(Replay Time)으로 대체하면 원래의 시간 특성이 숨겨지고 실제 현장 이벤트를 정확하게 재구성하지 못할 수 있다.
+
+관측 가능성(Observability)은 타이밍 아키텍처(Timing Architecture)를 검증하는 데 필수적이다. 유용한 측정 지표에는 센서 주파수, 도착 간 시간(Inter-Arrival Time), 타임스탬프 오프셋, 동기화 잔차(Synchronization Residual), 클록 드리프트, 버퍼 깊이(Buffer Depth), 보간 구간(Interpolation Interval), 외삽 시간, 누락된 연계(Dropped Association), 종단 간 데이터 경과 시간(End-to-End Data Age)이 포함된다. 이러한 값은 정상 운용 중에 모니터링할 수 있으며 높은 계산 부하 또는 네트워크 부하 조건에서도 검증할 수 있다. 시간 성능은 개별 센서가 명목 주파수로 데이터를 발행하는지만 확인하는 것이 아니라 종단 간 시스템 특성으로 평가해야 한다.
+
+따라서 전체 과정은 센서 처리 파이프라인 내부의 시간 정규화 계층(Temporal Normalization Layer)으로 이해할 수 있다. 하드웨어 또는 네트워크 동기화는 공통 클록 기준을 확립하고, 타임스탬프는 획득 시간을 보존하며, 버퍼는 비동기 관측값을 정리하고, 연계(Association)는 기준 시점 주변의 측정값을 선택한다. 보간은 중간 상태를 추정하고, 이동 보상은 측정값을 시간적으로 일관된 상태로 변환한다. 이후 검증과 상태 모니터링을 통해 최종적으로 동기화된 데이터가 신뢰할 수 있는지를 판단한다.
+
+이 장의 구조에서 센서 타임스탬프 정렬 및 보간(Sensor Timestamp Alignment and Interpolation)은 라이다, 카메라, 레이더 및 포인트 클라우드 지면 처리(Point-Cloud Ground Processing) 이후에 위치하며, 센서 고장 검출(Sensor-Failure Detection), 파이프라인 재구성(Pipeline Reconfiguration), GPU 가속 처리(GPU-Accelerated Processing), 지연시간 예산 분석(Latency-Budget Analysis), 통합 야외 AMR 센서 처리(Integrated Outdoor AMR Sensor Processing) 이전에 배치된다. 신뢰성 높은 시간 정렬은 이러한 이종 센서 스트림(Heterogeneous Sensor Stream)이 개별적으로는 정확하지만 시간적으로 불일치하는 관측값의 집합이 아니라, 환경에 대한 일관된 표현(Coherent Representation)을 형성하도록 하는 공통 시간 기반(Common Time Foundation)을 제공한다.
+
+## 03.07. Sensor Failure Detection and Pipeline Reconfiguration [w/Code]
+
+![](images/image7.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+센서 고장 검출(Sensor Failure Detection)은 자율주행 센서 파이프라인(Autonomous Driving Sensor Pipeline)으로 입력되는 측정값이 의도된 기능을 수행하기에 유효하고, 적시에 제공되며, 충분한 신뢰성을 유지하는지를 지속적으로 판단하는 과정이다. 카메라(Camera), 라이다(LiDAR), 레이더(Radar), 관성측정장치(IMU), 위성항법시스템(GNSS) 수신기 및 휠 인코더(Wheel Encoder)는 완전히 고장날 수도 있고 점진적으로 성능이 저하될 수도 있다. 따라서 강건한 자율주행 스택(Autonomy Stack)은 데이터가 완전히 누락되는 경우뿐만 아니라 측정값이 계속 전달되면서도 실제 물리적 환경을 올바르게 나타내지 못하는 상태까지 인식해야 한다.
+
+센서 고장은 크게 하드 고장(Hard Failure)과 소프트 고장(Soft Failure)으로 분류할 수 있다. 하드 고장은 통신의 완전한 손실, 프레임 누락, 장치 연결 해제 또는 센서의 데이터 발행 중단과 같은 형태로 나타날 수 있다. 소프트 고장은 센서가 외관상 정상적인 측정값을 계속 생성하기 때문에 검출하기가 더욱 어렵다. 노이즈 증가, 영상 정지, 잘못된 캘리브레이션(Calibration), 타임스탬프 드리프트(Timestamp Drift), 일부 라이다 채널 손실, GNSS 성능 저하, 레이더 간섭(Radar Interference), 관성 측정값의 점진적인 바이어스(Bias) 증가 등이 대표적인 사례이다.
+
+기본적인 상태 모니터링(Health Monitoring)은 통신 및 타이밍 검사(Timing Check)에서 시작한다. 각 센서 스트림(Sensor Stream)은 예상 발행 주파수, 시퀀스 연속성(Sequence Continuity), 메시지 경과 시간(Message Age), 타임스탬프 단조성(Timestamp Monotonicity), 패킷 손실(Packet Loss), 타임아웃(Timeout) 상태를 기준으로 모니터링할 수 있다. 30 Hz로 동작해야 하는 카메라가 별도의 상태 경고 없이 초당 몇 프레임 수준으로 떨어져서는 안 된다. 마찬가지로 라이다 스트림이 완전한 메시지를 계속 발행하더라도 네트워크 손실로 인해 개별 스캔의 상당 부분이 누락될 수 있다.
+
+데이터 내용 검증(Data-Content Validation)은 측정값 자체가 물리적으로 타당한 상태를 유지하는지 검사한다. 카메라 모니터링에서는 정지된 프레임(Frozen Frame), 과도한 포화(Saturation), 어두운 영상, 블러(Blur), 손상된 이미지 영역 등을 평가할 수 있다. 라이다 모니터링에서는 포인트 수(Point Count), 거리 분포(Range Distribution), 누락된 링(Missing Ring), 반사강도 통계(Intensity Statistics), 공간적 커버리지(Spatial Coverage)를 검사할 수 있다. 레이더는 검출 수, 노이즈 수준, 간섭 지표 및 채널 상태를 평가할 수 있으며, IMU 검증에서는 포화, 비현실적인 가속도, 과도한 바이어스 또는 예상과 다르게 일정하게 유지되는 값을 식별할 수 있다.
+
+일관성 검사(Consistency Checking)는 센서 간 또는 시간에 따른 정보를 비교하여 또 다른 고장 검출 계층을 제공한다. 휠 인코더에서 추정된 차량 움직임은 IMU, GNSS 또는 위치추정(Localization) 결과와 비교할 수 있다. 라이다의 장애물 구조는 센서 모달리티(Modality) 사이의 완전한 일치를 요구하지 않으면서 카메라 또는 레이더 관측값과 비교할 수 있다. 예상되는 불확실성 범위를 초과하는 불일치가 지속되면 실제 환경 변화가 아니라 성능이 저하된 센서, 캘리브레이션 오류, 동기화 문제 또는 전처리 단계의 고장을 나타낼 수 있다.
+
+고장 검출은 센서 하드웨어 고장(Sensor Hardware Fault)과 파이프라인 고장(Pipeline Fault)을 구분해야 한다. 정상적인 센서도 드라이버(Driver)가 충돌하거나, 미들웨어 큐(Middleware Queue)가 오버플로되거나, GPU 처리가 정지하거나, 동기화가 실패하거나, 하위 노드가 메시지를 더 이상 소비하지 않으면 사용 불가능한 것처럼 보일 수 있다. 따라서 모니터링은 물리적 데이터 획득에서부터 드라이버, 전처리, 전송, 동기화 및 인지 인터페이스(Perception Interface)에 이르는 전체 경로를 포함해야 한다. 이를 통해 센싱 하드웨어 자체에 즉시 문제가 있다고 가정하지 않고 고장이 발생한 영역을 식별할 수 있다.
+
+유용한 상태 모델(Health Model)은 각 센서 또는 처리 단계를 단순한 정상 또는 고장 플래그 하나보다 더 세분화하여 표현한다. 정상(Healthy), 성능 저하(Degraded), 신뢰 불가(Unreliable), 사용 불가(Unavailable), 복구 중(Recovering)과 같은 상태를 사용하면 자율주행 시스템이 단계적으로 대응할 수 있다. 눈부심(Glare)의 영향을 받는 카메라는 일부 기능에는 계속 사용할 수 있지만 다른 기능에는 신뢰하기 어려울 수 있다. 마찬가지로 성능이 저하된 GNSS는 정밀 위치추정을 더 이상 지원하지 못하더라도 대략적인 위치 정보는 제공할 수 있다. 따라서 상태는 기능적 능력(Functional Capability)과 연결되어야 한다.
+
+신뢰도 및 품질 지표(Confidence and Quality Metric)는 이산적인 상태를 보완할 수 있다. 각 센서 스트림은 데이터 최신성(Freshness), 노이즈 수준, 캘리브레이션 유효성(Calibration Validity), 시간적 일관성(Temporal Consistency), 커버리지, 추정 불확실성(Estimated Uncertainty)을 제공할 수 있다. 이러한 지표는 하위 모듈이 측정값을 선택하거나 가중치를 부여할 때 사용할 수 있는 품질 평가(Quality Assessment)로 결합될 수 있다. 목적은 반드시 하나의 범용 신뢰도 점수를 계산하는 것이 아니라, 데이터를 사용하는 모듈이 어떤 기능을 신뢰할 수 있는지 판단할 수 있도록 충분한 진단 정보를 전달하는 것이다.
+
+파이프라인 재구성(Pipeline Reconfiguration)은 검출된 고장이 성능 저하된 구성요소에 의존하는 기능에 영향을 미치기 시작할 때 수행된다. 시스템은 센서 입력, 전처리 단계, 인지 모듈, 위치추정 기능 및 계획 기능(Planning Capability) 사이의 의존 관계(Dependency)를 명확하게 유지해야 한다. 라이다를 사용할 수 없게 되면 라이다 기반 지면 분할(Ground Segmentation)과 포인트 클라우드 장애물 검출(Point-Cloud Obstacle Detection)을 비활성화하거나 유효하지 않은 상태로 표시할 수 있다. 현재 운용 조건에서 충분한 기능을 제공할 수 있다면 카메라 또는 레이더 기반 기능은 계속 동작할 수 있다.
+
+중복 센싱(Redundant Sensing)을 사용하면 처리 그래프(Processing Graph)가 대체 센서 소스 사이를 전환할 수 있다. 위치추정 시스템은 일반적으로 GNSS, IMU, 휠 오도메트리(Wheel Odometry), 라이다 위치추정을 결합하여 사용하지만 GNSS를 사용할 수 없을 때 관성 및 오도메트리 정보를 이용하여 일정 시간 동안 계속 동작할 수 있다. 장애물 인지는 라이다를 주요 기하학적 센서로 사용하면서 카메라와 레이더 관측값을 보완 입력으로 유지할 수 있다. 재구성은 하나의 센서가 다른 센서를 모든 상황에서 대체할 수 있다고 가정하기보다 명확하게 정의된 기능 관계(Capability Relationship)를 기반으로 수행해야 한다.
+
+안전한 운용이 가능한 경우 완전한 자율주행에서 즉각적인 전체 정지로 전환하는 것보다 점진적 성능 저하(Graceful Degradation)가 바람직하다. 플랫폼은 속도를 낮추고, 장애물 안전 여유(Obstacle Margin)를 증가시키며, 운용 영역을 제한하고, 위험도가 높은 기동을 비활성화하거나, 움직임을 실행하기 전에 더욱 강한 확인 조건을 요구할 수 있다. 허용되는 동작은 남아 있는 센싱 능력에 대응해야 한다. 개방된 공간에서 저속으로 이동하기에는 충분한 성능 저하 센서 구성이 보행자 또는 복잡한 장애물 주변에서 고속으로 운용하기에는 충분하지 않을 수 있다.
+
+일부 고장은 자율주행을 계속하는 대신 최소 위험 동작(Minimal-Risk Behavior)으로 전환해야 한다. 남아 있는 센서가 충분한 장애물 인식, 위치추정 신뢰도 또는 차량 상태 추정(Vehicle-State Estimation)을 제공하지 못하면 시스템은 제어된 방식으로 정지하거나 미리 정의된 안전 상태(Safe Condition)로 이동해야 할 수 있다. 따라서 센서 파이프라인 재구성은 독립적인 인지 기능으로 남아 있어서는 안 되며 계획, 제어 및 안전 감독(Safety Supervision)과 통신해야 한다. 고장에 대한 대응은 궁극적으로 시스템 수준의 의사결정이다.
+
+센서가 상태 임계값(Health Threshold)을 반복적으로 넘나드는 경우 재구성이 여러 구성 사이에서 빠르게 진동하는 현상을 방지해야 한다. 히스테리시스(Hysteresis), 지속 시간 타이머(Persistence Timer), 복구 기준(Recovery Criteria)을 사용하면 불안정한 전환을 방지할 수 있다. 고장 조건이 정의된 시간 동안 지속된 이후에만 센서를 성능 저하 상태로 선언하고, 정상 동작이 충분한 시간 동안 유지된 이후에만 정상 상태로 복귀시킬 수 있다. 또한 센서를 다시 신뢰하기 전에 재초기화(Reinitialization), 캘리브레이션 검사, 동기화 검증 또는 중복 측정값과의 비교가 필요할 수 있다.
+
+워치독(Watchdog)과 하트비트(Heartbeat) 메커니즘은 처리 구성요소에 대한 추가적인 감독 기능을 제공한다. 노드(Node)는 자신이 정상적으로 동작하고 있으며 예상 실행 마감시간(Execution Deadline)을 만족하고 있다는 정보를 주기적으로 보고할 수 있다. 하트비트가 누락되면 소프트웨어 종료, 교착 상태(Deadlock), 과도한 처리 시간 또는 통신 고장을 의미할 수 있다. 그러나 프로세스가 살아 있다는 사실만으로 올바르게 동작하고 있다고 판단할 수는 없으므로 하트비트 모니터링은 타이밍, 데이터 품질 및 의미론적 타당성 검사(Semantic Plausibility Check)와 결합해야 한다. 이러한 계층적 전략은 하나의 진단 메커니즘만 사용하는 것보다 높은 고장 검출 범위를 제공한다.
+
+복잡한 다중 센서 시스템에서는 고장 격리(Fault Isolation)의 중요성이 더욱 커진다. 카메라-라이다 융합(Camera-LiDAR Fusion)의 결과가 일관되지 않을 경우 원인은 카메라, 라이다, 캘리브레이션 파라미터, 타임스탬프 정렬, 좌표 변환(Coordinate Transformation) 또는 융합 알고리즘 자체일 수 있다. 진단 로직은 관련된 모든 구성요소를 비활성화하기보다 여러 관측값을 사용하여 가장 가능성이 높은 원인을 좁혀야 한다. 측정값과 변환 과정에 대한 출처 정보(Provenance Information)를 유지하면 비정상적인 출력을 처리 그래프를 따라 역추적하여 원인을 찾는 데 도움이 된다.
+
+재구성 아키텍처(Reconfiguration Architecture)는 결정적이고 감사 가능한 동작(Deterministic and Auditable Behavior)을 유지해야 한다. 각각의 인식된 고장 상태에 대해 시스템은 어떤 데이터 경로를 활성 상태로 유지하고, 어떤 모듈을 비활성화하며, 어떤 품질 플래그(Quality Flag)를 전달하고, 어떤 운용 제한(Operational Restriction)을 적용할지를 정의해야 한다. 동적 재구성(Dynamic Reconfiguration)이 예측 불가능한 소프트웨어 그래프를 생성해서는 안 된다. 명시적인 상태 머신(State Machine), 기능 테이블(Capability Table), 정책 규칙(Policy Rule)을 사용하면 전환 과정을 재현 가능하게 만들고 시뮬레이션, 하드웨어 인더루프 시험(Hardware-in-the-Loop Testing), 현장 검증(Field Validation)에서 보다 쉽게 검증할 수 있다.
+
+야외 자율이동로봇(Outdoor AMR)은 환경 조건으로 인해 하드웨어 고장과 유사한 일시적인 성능 저하가 발생할 수 있으므로 특별한 주의가 필요하다. 비, 안개, 먼지, 직사광선, 진흙, 진동, 식생, GNSS 다중경로(Multipath GNSS), 레이더 간섭은 센서를 물리적으로 손상시키지 않더라도 센싱 품질을 저하시킬 수 있다. 따라서 상태 모니터링은 가능한 경우 환경적 성능 저하(Environmental Degradation)와 영구적인 하드웨어 고장을 구분해야 한다. 두 조건 모두 운용 적응(Operational Adaptation)을 요구할 수 있지만 복구 로직과 유지보수 측면에서 서로 다른 의미를 가진다.
+
+로깅(Logging)과 관측 가능성(Observability)은 현장에서 간헐적으로 발생하는 고장을 진단하는 데 필수적이다. 시스템은 상태 전환(Health-State Transition), 타임스탬프, 진단 지표, 처리 지연시간(Processing Latency), 누락된 메시지, 구성 변경(Configuration Change), 각각의 재구성 결정이 내려진 이유를 기록해야 한다. 이러한 로그를 센서 기록 및 차량 상태와 동기화하면 엔지니어가 성능 저하 모드(Degraded Mode) 또는 비상 대응으로 이어진 과정을 재구성하고 진단 로직이 의도한 대로 동작했는지 판단할 수 있다.
+
+검증은 자연적으로 발생하는 고장만 기다리는 것이 아니라 의도적인 고장 주입(Fault Injection)을 포함해야 한다. 시험에서는 패킷 손실, 정지된 프레임, 지연된 타임스탬프, 손상된 캘리브레이션, 라이다 채널 누락, GNSS 단절, IMU 바이어스, 레이더 간섭, 드라이버 종료, 처리 과부하(Processing Overload), 통신 손실 등을 시뮬레이션할 수 있다. 목적은 단순히 고장이 검출되는지를 확인하는 것이 아니라 고장 격리, 재구성, 성능 저하, 복구 및 하위 안전 동작(Downstream Safety Behavior)이 요구 시간 내에 적절하게 수행되는지를 검증하는 것이다.
+
+따라서 전체 아키텍처는 폐루프 진단 및 적응 과정(Closed Diagnostic and Adaptation Loop)으로 이해할 수 있다. 센서 및 파이프라인 관측값은 상태 모니터(Health Monitor)로 입력되고, 모니터는 이상(Anomaly)을 검출하여 구성요소의 상태를 추정한다. 의존성 로직(Dependency Logic)은 영향을 받는 자율주행 기능을 결정하고, 재구성 관리자(Reconfiguration Manager)는 유효한 처리 경로를 활성화하면서 신뢰할 수 없는 경로를 비활성화한다. 계획 및 안전 기능은 남아 있는 시스템 능력에 따라 운용 방식을 조정하며, 복구 모니터링(Recovery Monitoring)은 고장난 구성요소를 언제 안전하게 파이프라인에 다시 포함할 수 있는지를 판단한다.
+
+이 장의 구조에서 센서 고장 검출 및 파이프라인 재구성(Sensor Failure Detection and Pipeline Reconfiguration)은 센서 타임스탬프 정렬 및 보간(Sensor Timestamp Alignment and Interpolation) 이후에 위치하며, GPU 가속 센서 처리(GPU-Accelerated Sensor Processing), 지연시간 예산 분석(Latency-Budget Analysis), 통합 야외 AMR 다중 센서 사례(Integrated Outdoor AMR Multi-Sensor Case) 이전에 배치된다. 전체 볼륨의 안전 장(Safety Chapter)에서는 센서 중복성과 보팅(Sensor Redundancy and Voting), 폴백 계획(Fallback Planning), 워치독 및 안전 개입(Safety Intervention)을 별도로 다루므로, 이 단계에서는 센서 처리 체인 내부의 성능 저하를 검출하고 이후 자율주행 기능에 유효한 데이터 경로를 유지하는 데 중점을 둔다.
+
+## 03.08. GPU Accelerated Sensor Processing CUDA Kernels [w/Code]
+
+![](images/image8.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+GPU 가속 센서 처리(GPU-Accelerated Sensor Processing)는 대규모 이미지, 포인트 클라우드(Point Cloud), 레이더 텐서(Radar Tensor), 점유 격자(Occupancy Grid) 및 기타 센서 표현에 반복적으로 적용되는 연산의 실행 시간을 줄이기 위해 대규모 병렬 연산(Massively Parallel Computation)을 활용한다. 자율주행 파이프라인은 수천에서 수백만 개의 데이터 요소에 유사한 수학적 변환을 독립적으로 적용하는 전처리 연산이 많기 때문에 이러한 계산 모델에 매우 적합하다. CUDA 커널(CUDA Kernel)을 사용하면 제한된 수의 CPU 코어에서 순차적으로 처리하는 대신 NVIDIA GPU에서 이러한 연산을 동시에 실행할 수 있다.
+
+CUDA 커널은 다수의 GPU 스레드(Thread)가 병렬로 실행하는 함수이다. 스레드는 블록(Block)으로 구성되고 블록은 전체 커널 실행을 표현하는 그리드(Grid)를 형성한다. 센서 데이터는 이러한 계층 구조에 자연스럽게 매핑할 수 있다. 이미지 픽셀은 2차원 스레드 좌표에, 포인트 클라우드 요소는 1차원 인덱스에, 복셀(Voxel) 또는 텐서 연산은 다차원 그리드에 대응시킬 수 있다. GPU 성능은 단순한 연산 처리량뿐만 아니라 스레드 구성, 메모리 접근 및 작업 부하 균형(Workload Balance)에 의해서도 결정되므로 효율적인 매핑이 중요하다.
+
+카메라 전처리(Camera Preprocessing)는 데이터 병렬 가속(Data-Parallel Acceleration)의 직접적인 사례를 제공한다. 왜곡 보정(Undistortion), 정류(Rectification), 크기 조정(Resizing), 정규화(Normalization), 색상 변환(Color Conversion), 필터링 및 이미지 리매핑(Image Remapping)은 많은 픽셀에 유사한 연산을 수행한다. CUDA 커널은 개별 픽셀 또는 작은 이미지 영역을 서로 다른 스레드에 할당하여 많은 변환을 동시에 처리할 수 있다. AMR 주변에 여러 카메라가 사용되는 경우 GPU는 각 프레임과 연결된 타임스탬프 및 캘리브레이션 파라미터를 유지하면서 독립적인 카메라 스트림을 동시에 처리할 수도 있다.
+
+라이다 처리(LiDAR Processing) 역시 개별 포인트에 독립적인 변환을 적용하는 경우가 많기 때문에 병렬성을 효과적으로 활용할 수 있다. 좌표 변환(Coordinate Transformation), 거리 필터링(Range Filtering), 반사강도 필터링(Intensity Filtering), 관심영역 선택(Region-of-Interest Selection), 포인트 유효성 검사(Point Validity Check), 이동 보상(Motion Compensation)은 대규모 포인트 배열에서 수행할 수 있다. 지면 분할(Ground Segmentation)과 복셀화(Voxelization)는 주변 포인트 또는 셀 수준의 상호작용을 요구할 수 있지만 상당 부분을 병렬화할 수 있다. 설계에서는 CPU 중심의 포인트 구조와 GPU 중심의 연속 배열(Contiguous Array) 사이에서 발생하는 불필요한 변환을 최소화해야 한다.
+
+레이더 처리(Radar Processing) 역시 신호 또는 텐서 연산의 계산량이 많은 경우 GPU 가속의 이점을 얻을 수 있다. 거리(Range), 도플러(Doppler), 각도(Angle), 필터링, 임계값 처리(Thresholding), 검출 단계에는 높은 병렬성을 가진 수치 연산이 포함될 수 있다. 레이더 인터페이스에 따라 일부 저수준 신호 처리는 이미 센서 내부에서 수행되고 차량 컴퓨터에는 검출 목록(Detection List)이나 레이더 큐브(Radar Cube)만 전달될 수 있다. 따라서 GPU 가속은 모든 플랫폼에서 원시 레이더 처리를 외부에서 수행한다고 가정하지 않고 실제 센서가 제공하는 데이터 표현을 대상으로 해야 한다.
+
+메모리 전송(Memory Transfer)은 GPU 센서 처리에서 가장 중요한 제약조건 중 하나이다. 대용량 센서 버퍼를 호스트 메모리(Host Memory)와 디바이스 메모리(Device Memory) 사이에서 반복적으로 이동해야 한다면 빠른 CUDA 커널이 제공하는 이점은 제한적이다. 처리 아키텍처는 불필요한 호스트-디바이스(Host-to-Device) 및 디바이스-호스트(Device-to-Host) 복사를 줄이고 여러 연속 처리 단계가 GPU에서 실행될 수 있다면 중간 표현을 GPU에 유지해야 한다. 고정 호스트 메모리(Pinned Host Memory), 비동기 전송(Asynchronous Transfer), 재사용 가능한 디바이스 버퍼(Reusable Device Buffer)를 활용하면 전송 오버헤드와 메모리 할당 비용을 추가로 줄일 수 있다.
+
+병합 메모리 접근(Coalesced Memory Access)은 효율적인 CUDA 커널 구현에 필수적이다. 인접한 스레드가 인접한 메모리 위치에 접근하도록 구성하면 전역 메모리(Global Memory) 트랜잭션을 효율적으로 결합할 수 있다. CPU 사용 편의성을 중심으로 설계된 센서 데이터 구조는 포인터, 패딩(Padding), 불규칙한 레이아웃을 포함하여 GPU 접근 효율을 떨어뜨릴 수 있다. 특히 커널에서 포인트 좌표, 반사강도 또는 타임스탬프와 같은 일부 속성만 사용하는 경우 구조체 배열(Array of Structures)보다 배열 구조(Structure of Arrays)가 더 효율적인 메모리 접근 패턴을 제공할 수 있다.
+
+공유 메모리(Shared Memory)는 동일한 블록에 속하는 스레드가 접근할 수 있는 저지연 저장공간(Low-Latency Storage)을 제공한다. 이미지 컨볼루션(Image Convolution), 국부 필터링(Local Filtering), 이웃 연산(Neighborhood Operation), 히스토그램 계산 및 일부 포인트 클라우드 알고리즘에서는 자주 재사용되는 데이터를 전역 메모리에서 반복적으로 읽는 대신 공유 메모리에 적재할 수 있다. 그러나 공유 메모리 용량은 제한되어 있으며 과도하게 할당하면 점유율(Occupancy)이 감소할 수 있다. 따라서 커널 설계에서는 데이터 재사용성과 각 스트리밍 멀티프로세서(Streaming Multiprocessor)에서 동시에 활성화할 수 있는 블록 및 스레드 수 사이의 균형을 고려해야 한다.
+
+GPU 점유율(GPU Occupancy)은 사용 가능한 실행 자원이 활성 워프(Active Warp)를 얼마나 효과적으로 지원할 수 있는지를 나타내지만 최대 점유율이 항상 최대 애플리케이션 성능을 의미하지는 않는다. 레지스터 사용량(Register Usage), 공유 메모리 요구량, 분기 발산(Branch Divergence), 메모리 대역폭(Memory Bandwidth), 명령어 지연시간(Instruction Latency)이 모두 커널 효율에 영향을 준다. 따라서 센서 처리 커널은 하나의 이론적 지표만을 기준으로 최적화하기보다 실제 작업 부하를 사용하여 프로파일링(Profiling)해야 한다. 메모리 제한형(Memory-Bound) 필터링 커널은 연산 제한형(Compute-Bound) 기하학적 변환과 서로 다른 최적화 전략을 필요로 한다.
+
+분기 발산(Branch Divergence)은 동일한 워프(Warp)에 포함된 스레드들이 서로 다른 실행 경로를 따를 때 발생한다. 센서 처리에는 유효하지 않은 포인트 제거, 이미지 경계 검사, 거리 임계값 적용, 지형 분류와 같은 조건부 연산이 자주 포함된다. 심한 분기 발산이 발생하면 하나의 워프 내부에서 서로 다른 분기가 순차적으로 실행될 수 있기 때문에 병렬 처리 효율이 감소한다. 알고리즘은 필요한 처리 의미를 유지하면서 데이터 재구성, 처리 단계 분리 또는 압축된 유효 요소 목록(Compacted Valid-Element List)을 사용하여 분기 발산을 줄일 수 있다.
+
+CUDA 스트림(CUDA Stream)을 사용하면 하드웨어 자원과 데이터 의존성이 허용하는 범위에서 독립적인 연산을 중첩하여 실행할 수 있다. 센서 파이프라인은 카메라, 라이다, 레이더 또는 전처리 작업에 별도의 스트림을 사용할 수 있으며 비동기 메모리 복사(Asynchronous Memory Copy)를 커널 실행과 중첩할 수 있다. CUDA 이벤트(CUDA Event)는 전역 동기화(Global Synchronization)를 강제하지 않고 연산 사이의 의존성을 표현할 수 있다. 이는 서로 다른 센서가 비동기적으로 데이터를 발행하고 관련 없는 GPU 작업을 기다리느라 서로를 불필요하게 차단해서는 안 되는 다중 센서 시스템에서 특히 유용하다.
+
+커널 융합(Kernel Fusion)은 여러 개의 단순한 연산을 하나의 GPU 커널로 결합하여 중간 메모리 트래픽과 커널 실행 오버헤드(Kernel Launch Overhead)를 줄일 수 있다. 예를 들어 포인트 유효성 검사, 좌표 변환, 관심영역 필터링을 라이다 버퍼를 한 번 순회하면서 동시에 수행할 수 있다. 그러나 지나치게 큰 융합 커널은 레지스터 압력(Register Pressure), 복잡성 및 동기화 요구사항을 증가시킬 수 있다. 따라서 커널 융합은 모든 연속 처리 단계에 자동으로 적용하기보다 프로파일링과 데이터 흐름 분석(Data-Flow Analysis)을 기반으로 결정해야 한다.
+
+병렬 프리픽스 합(Parallel Prefix Sum), 리덕션(Reduction), 정렬(Sorting), 압축(Compaction)은 불규칙한 센서 작업 부하를 처리하는 데 중요한 기본 연산이다. 필터링 커널은 유효한 라이다 포인트를 병렬로 표시할 수 있지만, 조밀한 출력 배열(Dense Output Array)을 생성하려면 필터링을 통과한 각 포인트를 어느 위치에 저장할지 결정해야 한다. 스캔 및 압축 알고리즘(Scan and Compaction Algorithm)을 사용하면 이러한 작업을 GPU에서 효율적으로 수행할 수 있다. 유사한 기본 연산은 히스토그램 생성, 복셀 구성, 특징 집계(Feature Aggregation), 후보 선택(Candidate Selection) 등 가변 크기의 결과를 생성해야 하는 병렬 처리 단계에도 활용된다.
+
+CUDA 라이브러리(CUDA Library)를 활용하면 모든 연산을 사용자 정의 커널(Custom Kernel)로 직접 구현할 필요를 줄일 수 있다. 이미지 처리, 선형대수(Linear Algebra), 고속 푸리에 변환(FFT), 텐서 연산 및 딥러닝 추론(Deep-Learning Inference)은 최적화된 라이브러리나 프레임워크를 사용할 수 있는 경우가 많다. 사용자 정의 CUDA 커널은 센서 처리 연산이 플랫폼 특화 데이터 레이아웃, 특수한 기하학적 변환, 엄격한 지연시간 요구사항 또는 기존 라이브러리에서 효율적으로 표현하기 어려운 기능을 포함할 때 특히 유용하다. 사용자 정의 커널을 유지하려면 GPU 아키텍처와 소프트웨어 버전에 따른 세심한 시험도 필요하다.
+
+실시간 센서 처리(Real-Time Sensor Processing)에서는 높은 평균 처리량뿐만 아니라 예측 가능한 지연시간(Predictable Latency)이 필요하다. 정상 부하에서는 매우 빠르지만 간헐적으로 긴 지연이 발생하는 커널은 제어 중요 파이프라인(Control-Critical Pipeline)에 적합하지 않을 수 있다. 신경망 추론(Neural-Network Inference), 시각화, 매핑 또는 다른 작업과의 GPU 자원 경쟁(GPU Contention)은 실행 시간을 증가시킬 수 있다. 따라서 실제 동시 작업 부하에서 커널 실행 시간, 큐 대기 지연(Queueing Delay), 메모리 전송 시간, 동기화 시간 및 전체 센서-출력 지연시간(Sensor-to-Output Latency)을 측정해야 한다.
+
+GPU 스케줄링(GPU Scheduling)은 전처리와 하위 인지 처리 사이의 의존성도 준수해야 한다. 카메라 프레임은 필요한 이미지 변환이 완료되기 전에는 추론 단계(Inference Stage)로 전달될 수 없으며, 라이다 검출기는 필터링, 디스큐잉(Deskewing), 복셀화 결과에 의존할 수 있다. CUDA 이벤트 또는 프레임워크 수준 동기화(Framework-Level Synchronization)를 사용하면 전체 디바이스를 불필요하게 동기화하지 않고 이러한 관계를 표현할 수 있다. 명시적인 의존성 관리(Explicit Dependency Management)는 동시성을 유지하면서 하위 모듈이 불완전하거나 오래된 GPU 버퍼를 사용하지 않도록 보장한다.
+
+GPU 고장은 여러 센서 스트림으로 전파될 수 있으므로 오류 처리(Error Handling)가 중요하다. 커널 실행 오류(Kernel Launch Error), 잘못된 메모리 접근(Invalid Memory Access), 메모리 할당 실패(Allocation Failure), 타임아웃 또는 손상된 버퍼는 검출되어 센서 상태 아키텍처(Sensor Health Architecture)에 보고되어야 한다. GPU 가속 단계는 하위 데이터 발행을 아무런 경고 없이 중단시키는 것이 아니라 명확하게 정의된 고장 동작(Failure Behavior)을 가져야 한다. 기능에 따라 시스템은 처리를 재시도하거나, 축소된 CPU 구현으로 전환하거나, 영향을 받은 경로를 비활성화하거나, 성능 저하 운용 모드(Degraded Operational Mode)를 실행할 수 있다.
+
+GPU 가속이 전체 파이프라인을 실제로 개선하는지를 판단하려면 프로파일링이 필요하다. 측정 과정에서는 CPU 준비 작업(CPU Preparation), 메모리 복사, 커널 실행, 동기화, 출력 변환(Output Conversion)을 구분해야 한다. GPU 사용률(GPU Utilization)만으로는 충분하지 않다. 높은 사용률에서도 과도한 큐 대기 또는 불필요한 데이터 이동이 동시에 발생할 수 있기 때문이다. 프로파일링은 실제 배치 환경의 최적화 판단을 반영할 수 있도록 대표적인 센서 해상도, 포인트 밀도, 프레임 속도, 동시 추론 부하 및 환경 복잡도를 사용해야 한다.
+
+야외 자율이동로봇(Outdoor AMR)에서는 계산 성능과 함께 전력 및 열적 한계(Power and Thermal Limit)를 고려해야 한다. 지속적으로 높은 GPU 사용률을 유지하면 전력 소비와 발열이 증가하며 이는 배터리 운용시간과 지속 가능한 연산 주파수(Sustained Compute Frequency)에 영향을 줄 수 있다. 따라서 처리 아키텍처는 의미 있는 지연시간 또는 처리량 개선을 제공하는 연산에 GPU 가속을 우선 적용하고 가벼운 작업은 CPU 코어에서 유지할 수 있다. 목적은 모든 센서 처리 기능을 GPU로 이전하는 것이 아니라 균형 잡힌 이기종 컴퓨팅(Heterogeneous Computing)을 구성하는 것이다.
+
+실용적인 GPU 파이프라인은 지속적인 데이터 흐름(Persistent Data Flow)을 중심으로 구성된다. 센서 버퍼는 GPU 접근 가능 메모리로 입력되고, CUDA 커널은 높은 병렬성을 이용하여 전처리를 수행하며, 이후 GPU 처리 단계에서 필요한 중간 결과는 디바이스에 유지된다. 비동기 스트림은 동시성을 보존하고 필요한 출력만 CPU 측 모듈로 반환한다. 프로파일링과 상태 모니터링은 이러한 가속이 지연시간, 메모리, 전력 및 신뢰성 제약조건을 만족하면서 종단 간 동작(End-to-End Behavior)을 실제로 개선하는지 검증한다.
+
+이 장의 구조에서 GPU 가속 센서 처리(GPU-Accelerated Sensor Processing)는 센서 고장 검출 및 파이프라인 재구성(Sensor Failure Detection and Pipeline Reconfiguration) 이후에 위치하며, 센서 처리 지연시간 예산 분석(Sensor-Processing Latency-Budget Analysis)과 통합 야외 AMR 다중 센서 처리 사례(Integrated Outdoor AMR Multi-Sensor Processing Case) 이전에 배치된다. 이러한 배치는 앞서 다룬 센서별 전처리 및 동기화 단계와 이후의 성능 분석을 연결하며, CUDA 가속을 독립적인 인지 기능이 아니라 실시간 처리 요구사항을 충족하기 위한 구현 메커니즘(Implementation Mechanism)으로 다룬다.
+
+## 03.09. Sensor Processing Latency Budget Analysis
+
+![](images/image9.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+센서 처리 지연시간(Sensor Processing Latency)은 물리적 사건이 센서에 의해 관측된 시점부터 이에 대응하는 처리 정보가 하위 자율주행 기능에서 사용 가능해질 때까지 경과한 시간이다. 자율주행 차량 또는 야외 자율이동로봇(Outdoor AMR)에서 지연시간은 위치추정(Localization), 계획(Planning), 제어(Control)가 의사결정을 수행할 때 인지된 환경 정보가 얼마나 오래된 것인지를 결정한다. 따라서 지연시간 예산(Latency Budget)은 전체 센싱-의사결정 파이프라인(Sensing-to-Decision Pipeline)을 허용 가능한 실시간 응답 구간 내에 유지하면서 각 처리 단계가 사용할 수 있는 시간을 정의한다.
+
+지연시간은 소프트웨어가 센서 메시지를 수신하기 전부터 발생하기 시작한다. 카메라는 노출(Exposure)과 판독(Readout)에 시간이 필요하고, 회전식 라이다(Rotating LiDAR)는 하나의 스캔 구간에 걸쳐 포인트를 누적하며, 레이더는 검출 결과를 발행하기 전에 데이터 획득과 내부 신호 처리(Internal Signal Processing)를 수행한다. 이러한 획득 지연(Acquisition Delay)은 애플리케이션 수준 프로파일링(Application-Level Profiling)에서 직접 보이지 않더라도 실질적인 센서 데이터 경과 시간(Effective Sensor Age)의 일부이다. 따라서 정확한 분석에서는 물리적 획득 시간, 센서 내부 처리, 통신, 소프트웨어 처리 및 하위 모듈 전달을 구분해야 한다.
+
+센서 인터페이스(Sensor Interface)는 버스(Bus), 이더넷 링크(Ethernet Link), 장치 드라이버(Device Driver), 패킷 조립(Packet Assembly), 미들웨어(Middleware), 운영체제 스케줄링(Operating-System Scheduling)을 통해 추가적인 지연을 발생시킨다. 네트워크 전송시간은 평균적으로 작을 수 있지만 자원 경합(Contention)이나 패킷 재전송이 발생하면 변동될 수 있다. 소비 모듈이 생산 모듈보다 느리게 동작하면 미들웨어 큐(Middleware Queue)에 메시지가 누적될 수도 있다. 따라서 전처리 함수 하나의 실행시간만 측정하면 인지 시스템에 입력되는 데이터의 실제 경과 시간을 과소평가할 수 있다.
+
+지연시간 예산은 종단 간 경로(End-to-End Path)를 측정 가능한 단계로 분해한다. 카메라 파이프라인의 경우 노출, 전송, 디코딩(Decoding), 정류(Rectification), 크기 조정(Resizing), GPU 업로드, 전처리, 추론 준비(Inference Preparation), 발행(Publication) 등이 포함될 수 있다. 라이다 경로는 스캔 획득, 패킷 수신, 포인트 클라우드 구성(Point-Cloud Construction), 필터링, 디스큐잉(Deskewing), 지면 분할(Ground Segmentation), 데이터 발행으로 구성될 수 있다. 정확한 분해 방식은 이상화된 소프트웨어 아키텍처가 아니라 실제 배치된 데이터 흐름을 따라야 한다.
+
+평균 지연시간(Average Latency)만으로는 실시간 자율주행 시스템을 충분히 평가할 수 없다. 일반적으로는 빠르게 완료되지만 간헐적으로 훨씬 긴 시간이 필요한 처리 단계는 신속한 대응이 가장 필요한 순간에 인지를 지연시킬 수 있다. 따라서 지연시간 분석에서는 중앙값(Median), 상위 백분위수(Upper Percentile), 최대 관측 지연시간(Maximum Observed Latency), 마감시간 위반 빈도(Deadline-Miss Frequency)와 같은 분포 통계를 고려해야 한다. 특히 CPU 스케줄링, GPU 자원 경합, 메모리 할당, 네트워크 혼잡 또는 백그라운드 프로세스가 간헐적인 실행시간 급증을 발생시키는 경우 꼬리 지연시간(Tail Latency)이 중요하다.
+
+처리량(Throughput)과 지연시간은 명확하게 구분해야 한다. 초당 30프레임을 처리할 수 있는 파이프라인이 반드시 33 ms의 응답시간을 제공하는 것은 아니다. 여러 프레임이 큐에 쌓인 상태에서 높은 처리량으로 처리될 수 있지만 각각의 프레임은 상당한 대기시간을 경험할 수 있다. 자율주행 시스템에서는 전체 처리량보다 가장 최근의 유효한 정보가 얼마나 오래되었는지가 더 중요할 수 있다. 따라서 초당 처리되는 프레임 또는 스캔 수와 함께 큐 깊이(Queue Depth)와 데이터 경과 시간(Data Age)을 측정해야 한다.
+
+센서 주파수(Sensor Frequency)는 또 다른 중요한 시간적 제약조건을 설정한다. 10 Hz 라이다는 약 100 ms마다 새로운 스캔을 생성하는 반면 30 Hz 카메라는 이보다 더 자주 프레임을 생성한다. 처리 속도가 센서 주기보다 상당히 느리면 프레임을 삭제하거나 처리 작업량을 제한하지 않는 한 데이터 적체(Backlog)가 발생한다. 따라서 처리 예산은 각 스트림의 최대 허용 종단 간 지연시간뿐만 아니라 데이터 도착 주기(Arrival Period)도 함께 고려하여 연속 운용 중 시스템이 안정적인 상태를 유지하도록 해야 한다.
+
+다중 센서 동기화(Multi-Sensor Synchronization)는 의도적인 대기시간을 추가할 수 있다. 융합 모듈(Fusion Module)은 공통 기준 시간(Common Reference Time)에 대응하는 카메라, 라이다, 레이더 또는 자세 측정값이 도착할 때까지 처리를 지연시킬 수 있다. 동기화 윈도우(Synchronization Window)를 크게 설정하면 측정값 연계(Measurement Association)를 개선할 수 있지만 데이터 경과 시간이 증가하며, 지나치게 작은 윈도우는 연계 누락을 발생시킬 수 있다. 따라서 동기화 지연(Synchronization Delay)은 융합 계층의 보이지 않는 특성으로 취급하지 않고 지연시간 예산에 명시적으로 포함해야 한다.
+
+CPU 실행시간(CPU Execution Time)에는 전처리, 메시지 처리, 좌표 변환(Coordinate Transformation), 직렬화(Serialization), 메모리 관리 및 기타 지원 연산이 포함된다. 개별적으로는 작은 함수라도 데이터가 많은 노드를 통과하면 누적 지연시간이 상당히 커질 수 있다. 문맥 전환(Context Switch), 잠금(Lock), 캐시 미스(Cache Miss), 동적 메모리 할당(Dynamic Allocation), 스레드 경합(Thread Contention)은 실행시간을 추가로 증가시킬 수 있다. 프로파일링은 계산량이 많은 알고리즘뿐만 아니라 소프트웨어 아키텍처 자체에서 발생하는 구조적 오버헤드(Structural Overhead)도 식별해야 한다.
+
+GPU 가속(GPU Acceleration)은 계산시간을 줄일 수 있지만 자체적인 지연시간 요소를 추가한다. 호스트-디바이스 복사(Host-to-Device Copy), 커널 큐 대기(Kernel Queueing), 커널 실행(Kernel Execution), 동기화, 디바이스-호스트 전송(Device-to-Host Transfer), 신경망 추론(Neural-Network Inference)과의 자원 경합이 모두 최종 타이밍 결과에 영향을 준다. 몇 밀리초 내에 실행되는 커널이라도 전체 GPU 처리 경로에서는 훨씬 긴 시간이 필요할 수 있다. 따라서 지연시간 예산에서는 커널 실행시간만을 가속 결과로 제시하지 않고 전체 GPU 트랜잭션(Complete GPU Transaction)을 측정해야 한다.
+
+비동기 처리(Asynchronous Processing)는 통신, CPU 연산, 메모리 전송 및 GPU 실행을 중첩하여 자원 활용률을 높일 수 있다. 그러나 동시성(Concurrency)은 여러 센서 스트림이 공유 자원을 두고 경쟁할 수 있기 때문에 지연시간 분석을 더욱 복잡하게 만든다. CUDA 스트림(CUDA Stream), CPU 스레드 풀(Thread Pool), 미들웨어 실행기(Middleware Executor), 네트워크 큐(Network Queue)는 개별 함수의 실행시간만으로는 명확하게 확인하기 어려운 의존성을 생성할 수 있다. 따라서 각각의 센서 샘플이 실제로 통과하는 임계 경로(Critical Path)를 재구성하려면 종단 간 추적(End-to-End Tracing)이 필요하다.
+
+임계 경로(Critical Path)는 센서 처리 결과가 사용 가능해지는 시점을 결정하는 일련의 종속 연산이다. 이 경로에 포함되지 않은 단계를 최적화하면 자원 활용률은 개선될 수 있지만 최종 응답 지연시간은 감소하지 않을 수 있다. 지연시간 예산 분석에서는 어떤 연산이 필요한 출력의 생성을 직접 지연시키는지와 어떤 연산이 동시에 실행될 수 있는지를 구분해야 한다. 이러한 구분은 엔지니어링 팀이 최적화 작업의 우선순위를 결정하고 실시간 마감시간을 제한하지 않는 구성요소에 과도한 노력을 투입하는 것을 방지한다.
+
+지터(Jitter)는 연속된 샘플 사이에서 처리시간 또는 전달시간이 변화하는 정도를 나타낸다. 평균 지연시간이 허용 범위 내에 있더라도 높은 지터는 시스템 동작의 예측 가능성을 감소시킨다. 주요 원인에는 운영체제 스케줄링, 가변적인 알고리즘 복잡도, 메모리 할당, 가비지 컬렉션(Garbage Collection), 네트워크 경합, 열 스로틀링(Thermal Throttling), GPU 작업 부하 간섭이 포함된다. 실시간 파이프라인은 가능한 범위에서 이러한 요인을 제어하고 정상적인 변동이 즉시 마감시간 위반으로 이어지지 않도록 충분한 타이밍 여유(Timing Margin)를 확보해야 한다.
+
+역압(Backpressure)은 하위 처리 단계가 입력 데이터를 도착하는 속도만큼 빠르게 소비하지 못할 때 발생한다. 이 경우 개별 처리 함수의 실행시간이 변하지 않더라도 큐가 증가하면서 데이터 경과 시간이 길어진다. 인지 시스템에서는 모든 오래된 프레임을 순서대로 처리하는 것보다 오래된 정보를 폐기하고 최신 데이터를 처리하는 것이 더 유용한 경우가 많다. 따라서 큐 정책(Queue Policy)은 데이터를 사용하는 기능의 의미와 안전 요구사항에 따라 깊이를 제한하거나 오래된 샘플을 덮어쓰거나 가장 최근의 측정값을 우선 처리하도록 설계할 수 있다.
+
+실용적인 지연시간 예산은 전체 마감시간을 정상 처리에 모두 할당하기보다 일정한 여유(Margin)를 확보해야 한다. 환경 복잡도 증가, 포인트 클라우드 밀도 증가, 객체 수 증가, 추가 센서 스트림, 로깅(Logging), 진단(Diagnostics), 일시적인 연산 자원 경합은 작업 부하를 증가시킬 수 있다. 또한 열적 또는 전력 제한(Thermal or Power Limitation)은 장시간 운용 중 사용 가능한 연산 성능을 감소시킬 수 있다. 타이밍 여유는 이러한 변동을 흡수하여 시스템이 즉시 종단 간 요구조건을 위반하지 않도록 한다.
+
+지연시간은 데이터가 처리되는 동안 플랫폼과 주변 객체가 계속 움직이기 때문에 공간 오차(Spatial Error)와 밀접하게 관련된다. 차량이 속도 v로 이동하고 유효 인지 지연시간(Effective Perception Delay)이 Δt라면 해당 지연으로 발생하는 단순한 1차 변위(First-Order Displacement)는 대략 vΔt로 표현할 수 있다. 회전 운동은 추가적인 각도 오차(Angular Error)를 발생시키며 동적 객체도 자체적인 변위를 만든다. 따라서 허용 가능한 지연시간은 임의의 소프트웨어 목표값으로 결정하기보다 차량 속도, 환경, 센싱 거리 및 요구 안전 여유(Safety Margin)를 기반으로 도출해야 한다.
+
+야외 자율이동로봇(Outdoor AMR)은 일반 도로 차량보다 낮은 속도로 운용되는 경우가 많지만 이것이 지연시간 요구사항을 제거하는 것은 아니다. 보행자, 연석, 구조물, 기계 장비 또는 불규칙한 지형 가까이에서 주행할 수 있기 때문에 작은 공간 오차도 중요할 수 있다. 더 높은 속도로 운행하는 야외 플랫폼에서는 사용 가능한 응답시간이 더욱 짧아진다. 따라서 지연시간 목표는 운행설계영역(Operational Design Domain), 정지거리(Stopping Distance), 제어기 갱신 주기(Controller Update Rate), 장애물 근접도 및 인지 시스템의 불확실성을 반영해야 한다.
+
+계측(Instrumentation)은 전체 처리 그래프를 따라 타임스탬프를 전달해야 한다. 획득 시간(Acquisition Time), 노드 입력 시간(Node-Entry Time), 노드 출력 시간(Node-Exit Time), 큐 체류시간(Queue Residence), 동기화 지연, GPU 이벤트(GPU Event), 발행 시간을 기록하거나 추적할 수 있다. 서로 동기화되지 않은 프로세서의 타임스탬프는 신뢰성 있게 비교할 수 없기 때문에 공통 클록 기준(Common Clock Reference)이 필수적이다. 따라서 앞선 센서 파이프라인에서 설명한 타이밍 아키텍처(Timing Architecture)는 의미 있는 종단 간 지연시간 측정을 위한 선행 조건이 된다.
+
+지연시간 모니터링(Latency Monitoring)은 개발 단계의 벤치마크에만 제한하지 않고 실제 배치 이후에도 지속되어야 한다. 런타임 지표(Runtime Metric)를 통해 증가하는 큐 깊이, 마감시간 위반, GPU 자원 경합, 과부하된 CPU 코어, 지연된 센서 스트림 및 비정상적인 데이터 경과 시간을 확인할 수 있다. 타이밍 보장(Timing Guarantee)이 더 이상 충족되지 않으면 임계값을 기반으로 진단 이벤트를 생성하거나 성능 저하 운용(Degraded Operation)을 실행할 수 있다. 이를 통해 성능 모니터링은 지연시간을 단순한 오프라인 최적화 문제로 취급하지 않고 센서 상태 및 파이프라인 재구성과 연결된다.
+
+따라서 완전한 지연시간 예산은 시스템 수준의 타이밍 계약(System-Level Timing Contract)으로 이해할 수 있다. 이는 센서 획득, 통신, 동기화, CPU 및 GPU 전처리, 큐 대기, 발행, 하위 모듈의 데이터 소비를 측정 가능한 종단 간 마감시간(End-to-End Deadline)과 연결한다. 분석에서는 임계 경로를 식별하고 일반적인 동작과 최악 조건의 동작(Worst-Case Behavior)을 모두 특성화하며, 충분한 여유를 할당하고, 실제 배치된 작업 부하가 자율주행 시스템 설계 당시 사용된 가정 범위 내에서 지속적으로 동작하는지를 검증해야 한다.
+
+이 장의 구조에서 센서 처리 지연시간 예산 분석(Sensor Processing Latency Budget Analysis)은 GPU 가속 센서 처리(GPU-Accelerated Sensor Processing) 이후에 위치하며, 통합 야외 AMR 다중 센서 처리 사례(Integrated Outdoor AMR Multi-Sensor Processing Case) 바로 이전에 배치된다. 이러한 배치는 지연시간 분석을 앞서 다룬 카메라, 라이다, 레이더, 지면 처리, 동기화, 고장 관리 및 GPU 처리 주제에 대한 성능 통합 단계(Performance-Integration Step)로 구성하며, 이들 요소가 장의 마지막 야외 AMR 사례에서 통합되기 전에 전체 센서 처리 파이프라인의 실시간 성능을 평가하도록 한다.
+
+## 03.10. Outdoor AMR Multi Sensor Processing Integration Case
+
+![](images/image10.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+야외 자율이동로봇(Outdoor AMR)의 다중 센서 처리 시스템(Multi-Sensor Processing System)은 서로 다른 특성을 가진 센서 스트림을 통합하여 로봇과 주변 환경에 대한 일관된 실시간 표현(Real-Time Representation)을 생성한다. 카메라(Camera)는 풍부한 외관 정보를 제공하고, 라이다(LiDAR)는 3차원 기하 구조를 측정하며, 레이더(Radar)는 거리와 상대 속도 관측값을 제공한다. 관성측정장치(IMU), 위성항법시스템(GNSS), 휠 인코더(Wheel Encoder)는 차량의 움직임과 위치를 나타낸다. 통합은 하나의 센서 모달리티가 완전한 환경 인식을 제공한다고 가정하기보다 이러한 센서를 상호 보완적인 정보원으로 다루는 것에서 시작한다.
+
+처리 아키텍처(Processing Architecture)는 센서 데이터 획득(Sensor Acquisition)과 하드웨어 인터페이스(Hardware Interface)에서 시작된다. 각 장치는 서로 다른 샘플링 주파수, 데이터 크기, 좌표 프레임(Coordinate Frame), 통신 프로토콜을 사용한다. 카메라 프레임, 라이다 패킷, 레이더 검출값, 관성 측정값, GNSS 위치 정보, 인코더 측정값은 독립적인 입력 경로를 통해 들어온 후 표준화된 내부 표현(Standardized Internal Representation)으로 변환된다. 장치 드라이버는 획득 타임스탬프, 시퀀스 정보, 캘리브레이션 식별자(Calibration Identifier), 진단 상태를 보존하여 하위 모듈이 각각의 측정값을 해석하는 데 필요한 문맥 정보를 유지하도록 해야 한다.
+
+카메라 스트림(Camera Stream)은 인지 처리를 수행하기 전에 디코딩(Decoding), 이미지 형식 변환(Image-Format Conversion), 왜곡 보정(Undistortion), 정류(Rectification), 크기 조정(Resizing), 선택적 정규화(Normalization)를 거친다. 다중 카메라 구성(Multi-Camera Configuration)에서는 각각의 광학 프레임에 대해 독립적인 캘리브레이션과 정확하게 정의된 좌표 변환이 필요하다. 야외에서는 노출, 블러(Blur), 직사광선, 그림자, 비, 저조도가 이미지 품질에 영향을 줄 수 있다. 따라서 전처리 단계는 보정된 이미지와 함께 품질 정보를 제공하여 하위 기능이 기하학적으로 유효한 데이터와 시각적으로 성능이 저하된 관측값을 구분할 수 있도록 해야 한다.
+
+라이다 처리(LiDAR Processing)는 입력 패킷을 포인트 클라우드(Point Cloud)로 변환하고 기하학적 해석을 수행할 수 있도록 준비한다. 좌표 변환, 이동 보상(Motion Compensation), 다운샘플링(Downsampling), 지면 분할(Ground Segmentation)을 수행하기 전에 유효하지 않은 반사값과 불필요한 영역을 제거할 수 있다. 남은 포인트는 AMR 주변의 장애물, 구조물, 식생, 지형 및 기타 표면을 표현한다. 야외 환경에서는 경사면, 연석, 불규칙한 지면, 먼지, 비, 움직이는 식생 등이 구조화된 실내 환경에서 효과적인 가정을 위반할 수 있기 때문에 이 처리 단계가 더욱 어려워진다.
+
+레이더는 가시성이나 광학적 외관 정보의 신뢰성이 낮아질 때 상호 보완적인 센싱 특성을 제공한다. 센서 인터페이스에 따라 파이프라인은 레이더 검출값(Radar Detection) 또는 보다 풍부한 거리-도플러 표현(Range-Doppler Representation)을 처리할 수 있다. 필터링을 통해 품질이 낮은 반사값을 제거하고 좌표 변환을 통해 관측값을 로봇 기준 프레임(Robot Reference Frame)으로 변환한다. 레이더 측정값은 이동 객체 검출과 상대 속도 추정을 지원할 수 있지만 다중경로(Multipath), 클러터(Clutter), 간섭(Interference), 제한된 각도 분해능(Angular Resolution)으로 인해 처리된 관측값에 불확실성 정보를 함께 유지해야 한다.
+
+IMU, GNSS, 휠 인코더 측정값은 통합 파이프라인의 움직임 추정(Motion Estimation)을 위한 핵심 기반을 구성한다. IMU 데이터는 높은 주파수의 각속도와 가속도를 제공하고, 휠 인코더는 바퀴 또는 차량의 움직임을 나타내며, GNSS는 위성 수신 조건이 적절할 때 전역 위치(Global Position)를 제공한다. 이러한 스트림은 데이터 주기와 불확실성이 크게 다르다. 전처리에는 단위 변환(Unit Conversion), 바이어스 처리(Bias Handling), 유효성 검사, 좌표 변환, 보간(Interpolation)이 포함되며 이를 통해 다른 센서가 요구하는 타임스탬프에서 움직임 정보를 평가할 수 있다.
+
+시간 정렬(Temporal Alignment)은 센서들이 서로 다른 시점에서 움직이는 로봇과 변화하는 환경을 관측하기 때문에 필수적이다. 라이다 스캔은 일정 시간 구간에 걸쳐 측정값을 누적할 수 있는 반면 카메라는 개별 노출 시점에 영상을 획득하고 IMU는 훨씬 높은 주파수로 샘플을 생성한다. 파이프라인은 공통 시간 기준(Common Time Reference)을 설정하고 측정값을 버퍼링하며 차량 상태를 보간하고 정의된 동기화 허용 범위(Synchronization Tolerance) 안에서 관측값을 연계한다. 이후 이동 보상을 통해 다중 센서 처리를 수행하기 전에 측정값을 일관된 기준 시간으로 변환할 수 있다.
+
+공간 캘리브레이션(Spatial Calibration)은 센서 사이의 대응되는 기하학적 관계를 제공한다. 외부 파라미터 변환(Extrinsic Transformation)은 각 센서와 AMR 차체 프레임(Body Frame) 사이의 위치와 자세를 정의하고, 카메라 내부 파라미터(Camera Intrinsic Parameter)는 광학 투영 관계를 정의한다. 이러한 변환은 카메라, 라이다, 레이더, IMU, GNSS 및 차량 프레임을 연결하는 좌표 프레임 트리(Coordinate-Frame Tree)를 구성한다. 캘리브레이션 오류는 인지 결과의 불일치로 나타날 수 있으므로 캘리브레이션 유효성을 제조 과정에서 한 번 설정되는 불변 구성으로 취급하지 않고 지속적으로 모니터링해야 한다.
+
+통합 처리 그래프(Integrated Processing Graph)는 융합(Fusion) 이전에 센서 모달리티별 정보를 보존해야 한다. 모든 센서를 지나치게 이른 단계에서 하나의 단순화된 표현으로 변환하면 레이더 속도, 카메라 의미 정보(Camera Semantics), 라이다 기하 구조, 측정 불확실성과 같은 유용한 특성이 손실될 수 있다. 대신 전처리에서는 타임스탬프, 좌표 프레임, 품질 지표(Quality Indicator), 불확실성 정보를 포함하는 명확하게 정의된 출력을 생성해야 한다. 이후 융합 모듈은 위치추정(Localization), 장애물 검출, 자유 공간 추정(Free-Space Estimation), 매핑(Mapping)에 적합한 표현 수준에서 관측값을 결합할 수 있다.
+
+CPU와 GPU 자원은 작업 부하 특성에 따라 할당된다. 장치 통신, 상태 관리, 경량 필터링, 진단, 미들웨어 처리는 CPU 코어에서 수행할 수 있으며 이미지 연산, 포인트 클라우드 변환, 복셀화(Voxelization), 텐서 처리(Tensor Processing), 신경망 추론(Neural-Network Inference)은 GPU에서 실행할 수 있다. 연속된 GPU 연산의 중간 결과를 디바이스 메모리(Device Memory)에 유지하면 불필요한 데이터 전송을 줄일 수 있다. 비동기 실행(Asynchronous Execution)을 통해 카메라, 라이다 및 기타 처리 경로를 중첩 실행하면서 명시적인 의존성(Explicit Dependency)을 이용하여 올바른 처리 순서를 유지할 수 있다.
+
+실시간 통합(Real-Time Integration)을 위해서는 전체 처리 체인에 대한 지연시간 예산(Latency Budget)이 필요하다. 센서 획득, 통신, 전처리, 동기화, GPU 실행, 융합, 데이터 발행은 각각 사용 가능한 응답시간의 일부를 소비한다. 오래된 센서 데이터를 처리하는 것이 일부 과거 샘플을 삭제하는 것보다 더 큰 문제를 발생시킬 수 있으므로 큐 증가(Queue Growth)를 제어해야 한다. 종단 간 타임스탬프(End-to-End Timestamp)를 사용하면 개별 알고리즘의 실행시간에만 의존하지 않고 인지, 위치추정, 계획, 제어에 전달되는 정보의 실제 경과 시간(Data Age)을 측정할 수 있다.
+
+센서 상태 모니터링(Sensor Health Monitoring)은 정상적인 처리 과정과 병렬로 수행된다. 각각의 입력 스트림은 예상 주파수, 타임스탬프 진행 상태, 메시지 최신성(Message Freshness), 데이터 누락, 비정상적인 내용 및 진단 상태를 기준으로 검사된다. 센서 간 일관성(Cross-Sensor Consistency)을 활용하면 하나의 스트림만으로 검출하기 어려운 고장을 식별할 수 있다. 예를 들어 휠 움직임, IMU 적분값, GNSS 변위 사이의 불일치는 위치추정 입력의 성능 저하를 나타낼 수 있으며, 지속적인 카메라-라이다 불일치는 동기화 또는 캘리브레이션 문제를 의미할 수 있다.
+
+성능 저하가 검출되면 처리 그래프는 남아 있는 센싱 능력(Remaining Sensing Capability)에 따라 재구성될 수 있다. 일시적인 GNSS 손실이 발생하면 관성, 휠, 라이다 기반 움직임 추정에 대한 의존도를 높일 수 있다. 눈부심이나 어두운 환경으로 카메라 성능이 저하되면 장애물 해석에서 라이다와 레이더의 역할을 확대할 수 있다. 고장난 라이다가 다른 센서로 항상 대체될 수 있다고 가정해서는 안 되므로 재구성(Reconfiguration)은 명시적인 기능 규칙(Capability Rule)을 따라야 한다. 남아 있는 센서 구성이 낮은 신뢰도를 제공하는 경우 차량 속도나 허용 가능한 기동도 제한할 수 있다.
+
+통합 계층(Integration Layer)은 모든 하드웨어 세부사항을 노출하기보다 하위 인지 및 위치추정 기능에 안정적인 인터페이스를 제공해야 한다. 처리된 이미지, 포인트 클라우드, 레이더 관측값, 움직임 추정값, 상태 정보, 동기화된 변환을 일관된 메시지 계약(Message Contract)을 사용하여 발행할 수 있다. 이러한 분리를 통해 센서나 연산 하드웨어가 변경되더라도 모든 하위 알고리즘을 다시 작성할 필요가 없으며, 동시에 측정값의 출처, 타임스탬프, 좌표 프레임 및 처리 이력(Processing History)을 판단하는 데 필요한 메타데이터를 보존할 수 있다.
+
+관측 가능성(Observability)은 현장 운용과 엔지니어링 분석에 필수적이다. 로그에는 센서 타임스탬프, 처리 단계별 지연시간, 누락된 메시지, 동기화 오프셋(Synchronization Offset), 상태 전환, GPU 부하, 큐 깊이(Queue Depth), 재구성 이벤트를 기록해야 한다. 비정상 이벤트 전후의 일부 원시 또는 처리 센서 데이터를 저장하여 이후 재생(Replay)에 사용할 수도 있다. 이러한 기록을 서로 연계하면 알고리즘 자체에서 발생한 인지 오류와 타이밍, 캘리브레이션, 통신, 연산 과부하 또는 물리적 센서 성능 저하로 인해 발생한 오류를 구분할 수 있다.
+
+통합 시험(Integration Testing)은 개별 센서에서 시작하여 완전한 폐루프 운용(Closed-Loop Operation)으로 단계적으로 확장해야 한다. 기록 데이터 재생(Recorded-Data Replay)을 통해 결정론적 전처리를 검증할 수 있으며, 시뮬레이션을 이용하여 통제된 날씨, 조명, 교통 및 센서 고장 조건에 시스템을 노출시킬 수 있다. 하드웨어 인더루프 시험(Hardware-in-the-Loop Testing)은 실제 연산 장치와 인터페이스를 추가하며, 현장 시험(Field Test)은 실제 진동, 온도, 지형, 네트워크 동작 및 환경 복잡도에 AMR을 노출시킨다. 목적은 개별 알고리즘뿐만 아니라 타이밍, 데이터 품질, 연산 및 고장 대응 사이의 상호작용까지 검증하는 것이다.
+
+대표적인 야외 임무(Outdoor Mission)는 전체 처리 흐름을 보여준다. AMR이 보행자와 차량이 혼재된 환경을 이동할 때 카메라는 의미론적 문맥(Semantic Context)을 제공하고, 라이다는 3차원 장애물과 지형을 표현하며, 레이더는 움직임에 민감한 관측값(Motion-Sensitive Observation)을 제공한다. IMU, GNSS, 휠 인코더는 플랫폼의 움직임을 추정한다. 처리 시스템은 이러한 관측값을 시간적·공간적으로 정렬하고 상태를 평가하며 적절한 연산을 GPU에서 가속한 후 일관된 데이터 결과를 위치추정 및 인지 기능으로 전달한다.
+
+구조물 주변에서 GNSS 품질이 저하되면 시스템은 위치 신뢰도(Positioning Confidence)의 감소를 보고하면서 사용 가능한 관성, 오도메트리(Odometry), 기하학적 정보를 이용하여 움직임 추정을 계속할 수 있다. 강한 햇빛으로 특정 카메라의 성능이 저하되면 해당 이미지 스트림을 성능 저하 상태로 표시하면서 다른 센싱 경로를 계속 사용할 수 있다. 연산 부하가 증가하면 큐 정책과 스케줄링을 이용하여 시간 중요 데이터 경로(Time-Critical Data Path)를 보호할 수 있다. 이러한 대응은 통합이 단순히 측정값을 결합하는 것이 아니라 운용 조건이 변화할 때 유효한 시스템 동작을 유지하는 과정임을 보여준다.
+
+결과적으로 이 아키텍처는 지속적으로 감독되는 데이터 흐름 시스템(Continuously Supervised Data-Flow System)으로 이해하는 것이 적절하다. 센서 획득은 모달리티별 전처리(Modality-Specific Preprocessing)로 연결되고, 캘리브레이션과 타이밍은 공통 공간 및 시간 기준을 설정하며, 상태 모니터링은 데이터 유효성을 평가한다. CPU 및 GPU 스케줄링은 제한된 시간 내의 연산을 제공하고 동기화된 출력은 인지와 위치추정으로 전달되며, 지연시간 모니터링은 정보의 최신성을 검증한다. 재구성은 센서나 연산 자원이 저하될 때 활성 처리 경로를 적응시킴으로써 전체 루프를 완성한다.
+
+이 장의 구조에서 야외 AMR 다중 센서 처리 통합 사례(Outdoor AMR Multi-Sensor Processing Integration Case)는 센서 처리 파이프라인의 아키텍처, 라이다, 카메라, 레이더, 지면 분할, 타임스탬프 정렬, 고장 관리, GPU 처리 및 지연시간 예산 주제 이후에 배치된다. 따라서 이 사례는 Chapter 03의 통합 지점(Integration Point)으로 기능하며, 이후 볼륨이 주행 가능 영역 추정(Drivable-Area Estimation), 객체 검출 및 추적(Object Detection and Tracking), 행동 계획(Behavior Planning), 궤적 생성(Trajectory Generation), 제어(Control), 안전(Safety), 위치추정(Localization), 그리고 후반부의 야외 AMR 사례 연구(Outdoor AMR Case Studies)로 확장되기 전에 센서 처리 계층의 전체 요소를 하나의 시스템 관점에서 연결한다.
