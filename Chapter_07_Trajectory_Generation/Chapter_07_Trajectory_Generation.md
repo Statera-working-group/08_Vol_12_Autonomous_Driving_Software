@@ -1,0 +1,992 @@
+**Volume 12. Autonomous Driving Software**
+
+
+# Chapter 07. Trajectory Generation
+
+##  
+
+## 07.01. Trajectory Generation Concepts Polynomial Spline Lattice
+
+![](images/image1.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+Trajectory generation converts a high-level driving decision into a continuous motion plan that a vehicle or autonomous mobile robot can physically execute. Within the autonomous driving software stack, it lies between behavior planning and low-level control, transforming commands such as follow, stop, avoid, or change direction into time-dependent position, heading, velocity, acceleration, and curvature references.
+
+A path and a trajectory are related but fundamentally different representations. A path primarily describes geometric motion through space, typically as a sequence of positions and orientations, while a trajectory associates this geometry with time. A trajectory therefore specifies not only where the platform should travel but also when each state should be reached, allowing velocity, acceleration, steering, and braking requirements to be evaluated before execution.
+
+A practical trajectory generator receives information from several upstream modules. Localization provides the current vehicle pose and motion state, perception identifies static and dynamic obstacles, drivable-area estimation defines usable space, and behavior planning supplies the desired maneuver. The generator combines these inputs with vehicle dimensions, kinematic or dynamic constraints, speed limits, safety margins, and a prediction horizon to construct candidate motions.
+
+Trajectory generation can be formulated as finding a continuous state sequence x(t) and control-compatible motion over a finite horizon. Typical trajectory states contain longitudinal and lateral position, heading, velocity, acceleration, curvature, and sometimes jerk. The resulting trajectory must remain collision-free while respecting bounds imposed by steering geometry, actuator capability, tire or terrain interaction, passenger or payload stability, and the operating environment.
+
+Polynomial trajectories provide one of the simplest mathematical mechanisms for constructing smooth motion. Position can be represented as a polynomial function of time or another trajectory parameter. Boundary conditions at the initial and terminal states determine polynomial coefficients, enabling the planner to connect states while explicitly controlling quantities such as position, velocity, and acceleration. Higher-order forms can additionally constrain jerk or other derivatives.
+
+Cubic polynomials are commonly useful when position and first-derivative continuity are sufficient, while quartic and quintic polynomials provide additional degrees of freedom for motion constraints. Quintic formulations are especially convenient when initial and terminal position, velocity, and acceleration must all be specified. Instead of searching every possible continuous motion directly, planners can generate many polynomial candidates from combinations of terminal conditions and evaluate them efficiently.
+
+Polynomial representations become less convenient when a long or geometrically complicated route must be represented by a single function. Increasing polynomial order can introduce undesirable oscillation and numerical sensitivity. Piecewise representations address this problem by dividing the trajectory into local segments. Each segment remains mathematically manageable while continuity conditions imposed at segment boundaries preserve the smoothness required for stable vehicle motion.
+
+Splines generalize this piecewise approach by joining multiple polynomial segments through control points or knots. Cubic splines, B-splines, and related representations can describe complex road geometry with local control over trajectory shape. Changing one control point generally affects only a limited region of a spline, making spline-based trajectories particularly useful when a planner must refine part of a route without reconstructing the complete trajectory.
+
+Smoothness across spline segments is characterized by continuity of position and derivatives. Position continuity prevents geometric gaps, first-derivative continuity prevents abrupt direction changes, and second-derivative continuity supports smooth curvature evolution. For autonomous vehicles and outdoor AMRs, these properties directly affect steering commands, lateral acceleration, mechanical loading, payload stability, and the ability of the downstream controller to accurately track the generated reference.
+
+A lattice planner approaches trajectory generation from a different perspective. Rather than optimizing one continuous curve immediately, it constructs a structured collection of reachable candidate states or motion primitives. Nodes may represent combinations of longitudinal progress, lateral displacement, heading, velocity, or time. Connections between nodes correspond to feasible vehicle motions, creating a discrete approximation of the much larger continuous trajectory space.
+
+The lattice structure can incorporate vehicle kinematics during candidate construction, which distinguishes it from purely geometric grid search. Motion primitives may be generated using polynomial curves, splines, precomputed vehicle maneuvers, or numerical integration of a motion model. Because infeasible motions can be excluded before search, the planner explores trajectories that are more consistent with steering limits, turning radius, acceleration capability, and vehicle dimensions.
+
+Candidate trajectories require a cost function that expresses desirable driving behavior. Cost terms commonly measure collision risk, obstacle clearance, deviation from a reference route, terminal-state error, curvature, travel time, velocity error, acceleration, jerk, and control effort. Weighted combinations of these terms allow the planner to balance competing objectives, although the weights must be calibrated so that comfort or efficiency objectives never compensate for violations of hard safety constraints.
+
+Hard constraints and soft costs should therefore be treated differently. Collision, maximum curvature, steering limits, minimum clearance, or prohibited regions can invalidate a candidate completely, whereas comfort, route deviation, energy consumption, or progress can be represented as optimization costs. This separation prevents an apparently low-cost trajectory from being selected even though it violates a fundamental physical, operational, or safety requirement.
+
+Polynomial, spline, and lattice methods are complementary rather than mutually exclusive. A lattice planner can define candidate terminal states, polynomial functions can connect the current state to those targets, and splines can represent reference routes or smooth selected geometry. This layered combination reduces the continuous search problem to a manageable candidate set while retaining enough mathematical flexibility to produce smooth and dynamically meaningful motion.
+
+Trajectory generation also depends strongly on the coordinate representation. Cartesian coordinates provide a direct world-space description, while road-relative or reference-path coordinates can separate longitudinal progress from lateral displacement. This separation simplifies structured navigation because candidate motions can be expressed as forward progress and lateral offset relative to a reference line. The following chapter specifically develops Frenet-frame trajectory planning in greater detail.
+
+Static obstacle avoidance can often be handled through geometric collision checking, but dynamic environments require the trajectory to be evaluated in space and time. A geometrically valid path may become unsafe if a pedestrian, vehicle, or another robot occupies the same region at the planned arrival time. Dynamic planning therefore compares candidate trajectories with predicted obstacle motion and continuously updates them as new perception and prediction information becomes available.
+
+The planning horizon creates another important trade-off. A short horizon reduces computation and reacts quickly to local changes but may produce myopic decisions. A longer horizon provides better anticipation of turns, obstacles, and speed transitions but increases uncertainty and computational complexity. Practical systems commonly combine a sufficiently long reference or behavioral horizon with a shorter, frequently regenerated executable trajectory that reflects the latest environment estimate.
+
+Trajectory generation is consequently a receding process rather than a one-time calculation. At each planning cycle, the system observes the current state, updates environmental information, generates or optimizes candidate trajectories, rejects infeasible candidates, selects an acceptable solution, and passes a finite portion to the controller. The next cycle repeats the process from the newly estimated state, enabling adaptation to localization errors, moving obstacles, and changing terrain.
+
+For outdoor AMRs, trajectory feasibility extends beyond conventional road geometry. Uneven terrain, slopes, curbs, low-friction surfaces, narrow passages, and payload-dependent stability can alter the set of executable motions. A trajectory that satisfies planar curvature constraints may still be undesirable when terrain induces excessive roll, pitch, wheel slip, suspension motion, or load transfer. Traversability information can therefore become an additional trajectory constraint or cost.
+
+The interface with control is equally important. A mathematically smooth trajectory is useful only when the physical platform can track it under realistic latency, actuator limits, and state-estimation uncertainty. The trajectory generator should produce references at suitable temporal or spatial resolution and expose consistent quantities such as pose, velocity, acceleration, curvature, and timestamps. This creates a well-defined contract between planning and control.
+
+A robust implementation therefore treats trajectory generation as constrained motion synthesis rather than simple curve drawing. Polynomial methods provide efficient boundary-condition-based motion construction, splines provide flexible and locally controllable smooth geometry, and lattice methods provide structured exploration of feasible alternatives. Together they form a practical foundation for progressively more advanced Frenet, optimization, sampling, and model-based trajectory planners.
+
+Within the broader autonomous driving software architecture, this foundation connects perception-driven understanding and behavior-level decisions to executable physical motion. The chapter structure subsequently expands this foundation into Frenet planning, polynomial optimization, lattice planning, MPPI, comfort and energy objectives, feasibility checking, dynamic replanning, controller integration, and high-speed outdoor AMR operation.
+
+궤적 생성(Trajectory Generation)은 상위 수준의 주행 결정(High-Level Driving Decision)을 차량 또는 자율이동로봇(Autonomous Mobile Robot)이 물리적으로 실행할 수 있는 연속적인 운동 계획(Continuous Motion Plan)으로 변환하는 과정이다. 자율주행 소프트웨어 스택(Autonomous Driving Software Stack)에서 궤적 생성은 행동 계획(Behavior Planning)과 하위 수준 제어(Low-Level Control) 사이에 위치하며, 추종, 정지, 회피 또는 방향 전환과 같은 명령을 시간에 따른 위치(Position), 방향각(Heading), 속도(Velocity), 가속도(Acceleration), 곡률(Curvature) 기준값으로 변환한다.
+
+경로(Path)와 궤적(Trajectory)은 서로 밀접하게 관련되어 있지만 근본적으로 다른 표현이다. 경로는 일반적으로 위치와 자세의 연속으로 공간상의 기하학적 이동을 표현하는 반면, 궤적은 이러한 기하학적 정보에 시간(Time)을 결합한다. 따라서 궤적은 플랫폼이 어디로 이동해야 하는지뿐만 아니라 각 상태에 언제 도달해야 하는지도 정의하며, 이를 통해 실제 실행 전에 속도, 가속도, 조향(Steering), 제동(Braking) 요구사항을 평가할 수 있다.
+
+실제 궤적 생성기(Trajectory Generator)는 여러 상위 모듈(Upstream Module)로부터 정보를 입력받는다. 위치추정(Localization)은 현재 차량의 자세와 운동 상태를 제공하고, 인지(Perception)는 정적 및 동적 장애물을 식별하며, 주행 가능 영역 추정(Drivable-Area Estimation)은 이동 가능한 공간을 정의한다. 행동 계획(Behavior Planning)은 원하는 기동(Maneuver)을 제공하며, 궤적 생성기는 이러한 정보를 차량 크기, 운동학적 또는 동역학적 제약조건(Kinematic or Dynamic Constraints), 속도 제한, 안전 여유(Safety Margin), 예측 구간(Prediction Horizon)과 결합하여 후보 운동을 생성한다.
+
+궤적 생성은 유한한 시간 구간(Finite Horizon)에서 연속적인 상태 시퀀스(State Sequence) x(t)와 제어 가능한 운동(Control-Compatible Motion)을 찾는 문제로 정의할 수 있다. 일반적인 궤적 상태에는 종방향 및 횡방향 위치, 방향각, 속도, 가속도, 곡률, 경우에 따라 저크(Jerk)가 포함된다. 생성된 궤적은 충돌을 회피하면서 조향 기하학(Steering Geometry), 액추에이터(Actuator) 성능, 타이어 또는 지형 상호작용, 승차감 또는 페이로드 안정성(Payload Stability), 운용 환경에 의해 결정되는 제한조건을 만족해야 한다.
+
+다항식 궤적(Polynomial Trajectory)은 부드러운 운동을 생성하기 위한 가장 단순한 수학적 방법 중 하나이다. 위치를 시간 또는 다른 궤적 매개변수(Trajectory Parameter)에 대한 다항함수(Polynomial Function)로 표현할 수 있다. 초기 상태와 최종 상태의 경계조건(Boundary Conditions)을 이용하여 다항식 계수를 결정함으로써 위치, 속도, 가속도와 같은 물리량을 명시적으로 제어하면서 두 상태를 연결할 수 있다. 더 높은 차수의 다항식은 저크와 같은 추가적인 미분량까지 제한할 수 있다.
+
+3차 다항식(Cubic Polynomial)은 위치와 1차 미분의 연속성이 충분한 경우 유용하며, 4차 및 5차 다항식(Quartic and Quintic Polynomial)은 운동 제약조건을 설정하기 위한 추가적인 자유도(Degrees of Freedom)를 제공한다. 특히 5차 다항식(Quintic Polynomial)은 초기와 최종 위치, 속도, 가속도를 모두 지정해야 하는 경우 편리하다. 연속적인 모든 운동을 직접 탐색하는 대신 다양한 종단 조건(Terminal Conditions)의 조합으로 여러 다항식 후보를 생성하고 효율적으로 평가할 수 있다.
+
+하나의 함수로 길거나 기하학적으로 복잡한 경로를 표현해야 할 경우 다항식 표현은 불편해질 수 있다. 다항식의 차수를 높이면 불필요한 진동(Oscillation)과 수치적 민감성(Numerical Sensitivity)이 발생할 수 있다. 구간별 표현(Piecewise Representation)은 궤적을 여러 개의 국부 구간(Local Segment)으로 분할하여 이러한 문제를 해결한다. 각 구간은 수학적으로 관리 가능한 형태를 유지하면서 구간 경계에서 연속성 조건(Continuity Conditions)을 적용하여 안정적인 차량 운동에 필요한 부드러움을 유지한다.
+
+스플라인(Spline)은 여러 개의 다항식 구간을 제어점(Control Point) 또는 노트(Knot)를 통해 연결함으로써 이러한 구간별 접근법을 일반화한다. 3차 스플라인(Cubic Spline), B-스플라인(B-Spline) 및 관련 표현은 궤적 형상을 국부적으로 제어하면서 복잡한 도로 형상을 표현할 수 있다. 하나의 제어점을 변경해도 일반적으로 스플라인의 제한된 영역에만 영향을 주기 때문에 전체 궤적을 다시 구성하지 않고 특정 구간만 수정해야 하는 경우 특히 유용하다.
+
+스플라인 구간 사이의 부드러움은 위치 및 미분값의 연속성으로 정의된다. 위치 연속성(Position Continuity)은 기하학적 단절을 방지하고, 1차 미분 연속성(First-Derivative Continuity)은 급격한 방향 변화를 방지하며, 2차 미분 연속성(Second-Derivative Continuity)은 곡률이 부드럽게 변화하도록 지원한다. 자율주행차와 야외 자율이동로봇(Outdoor AMR)에서 이러한 특성은 조향 명령, 횡가속도(Lateral Acceleration), 기계적 하중(Mechanical Loading), 페이로드 안정성 및 하위 제어기의 궤적 추종 정확도에 직접적인 영향을 준다.
+
+격자 계획기(Lattice Planner)는 다른 관점에서 궤적 생성 문제에 접근한다. 하나의 연속적인 곡선을 즉시 최적화하는 대신 도달 가능한 후보 상태(Reachable Candidate State) 또는 모션 프리미티브(Motion Primitive)의 구조화된 집합을 구성한다. 노드(Node)는 종방향 진행 거리, 횡방향 변위, 방향각, 속도 또는 시간의 조합을 나타낼 수 있다. 노드 사이의 연결은 실행 가능한 차량 운동을 나타내며, 이를 통해 훨씬 큰 연속 궤적 공간(Continuous Trajectory Space)을 이산적으로 근사한다.
+
+격자 구조(Lattice Structure)는 후보를 생성하는 과정에서 차량 운동학(Vehicle Kinematics)을 반영할 수 있으며, 이러한 특징은 순수한 기하학적 격자 탐색(Geometric Grid Search)과 격자 계획을 구분한다. 모션 프리미티브는 다항식 곡선, 스플라인, 사전에 계산된 차량 기동(Precomputed Vehicle Maneuver), 또는 운동 모델(Motion Model)의 수치 적분을 이용하여 생성할 수 있다. 실행 불가능한 운동을 탐색 전에 제외할 수 있으므로 조향 한계, 최소 회전반경, 가속 성능 및 차량 크기에 보다 적합한 궤적을 탐색할 수 있다.
+
+후보 궤적(Candidate Trajectory)을 평가하기 위해서는 바람직한 주행 특성을 표현하는 비용함수(Cost Function)가 필요하다. 일반적인 비용 항목에는 충돌 위험(Collision Risk), 장애물과의 거리, 기준 경로(Reference Route) 이탈, 종단 상태 오차, 곡률, 이동 시간, 속도 오차, 가속도, 저크 및 제어 노력(Control Effort)이 포함된다. 이러한 비용 항목을 가중 결합(Weighted Combination)하여 서로 경쟁하는 목적을 조정할 수 있지만, 편안함이나 효율성 목표가 필수적인 안전 제약조건 위반을 상쇄하지 않도록 가중치를 설정해야 한다.
+
+따라서 하드 제약조건(Hard Constraints)과 소프트 비용(Soft Costs)은 서로 다르게 처리해야 한다. 충돌, 최대 곡률, 조향 한계, 최소 안전거리 또는 진입 금지 영역과 같은 조건은 후보 궤적 자체를 무효화할 수 있다. 반면 승차감, 기준 경로 이탈, 에너지 소비 또는 진행 정도는 최적화 비용(Optimization Cost)으로 표현할 수 있다. 이러한 분리는 낮은 비용을 가진 궤적이라 하더라도 기본적인 물리적, 운용적 또는 안전 요구사항을 위반하면 선택되지 않도록 한다.
+
+다항식(Polynomial), 스플라인(Spline), 격자(Lattice) 방식은 서로 배타적인 기술이 아니라 상호 보완적인 기술이다. 격자 계획기가 후보 종단 상태를 정의하고, 다항함수가 현재 상태와 해당 목표 상태를 연결하며, 스플라인이 기준 경로를 표현하거나 선택된 기하학적 궤적을 부드럽게 만들 수 있다. 이러한 계층적 조합은 연속적인 탐색 문제를 관리 가능한 후보 집합으로 축소하면서 부드럽고 동역학적으로 의미 있는 운동을 생성할 수 있는 충분한 수학적 유연성을 유지한다.
+
+궤적 생성은 좌표계 표현(Coordinate Representation)에도 크게 의존한다. 직교 좌표계(Cartesian Coordinates)는 월드 공간(World Space)에서 직접적인 위치 표현을 제공하는 반면, 도로 상대 좌표계(Road-Relative Coordinates) 또는 기준 경로 좌표계(Reference-Path Coordinates)는 종방향 진행과 횡방향 변위를 분리할 수 있다. 이러한 분리는 후보 운동을 기준선에 대한 전방 진행과 횡방향 오프셋(Lateral Offset)으로 표현할 수 있기 때문에 구조화된 주행 환경에서 계획 문제를 단순화한다. 다음 절에서는 프레네 좌표계(Frenet Frame) 기반 궤적 계획을 보다 구체적으로 다룬다.
+
+정적 장애물 회피(Static Obstacle Avoidance)는 일반적으로 기하학적 충돌 검사(Geometric Collision Checking)를 통해 처리할 수 있지만, 동적 환경에서는 궤적을 공간과 시간에서 동시에 평가해야 한다. 기하학적으로 유효한 경로라도 계획된 도착 시점에 보행자, 차량 또는 다른 로봇이 동일한 영역을 점유한다면 안전하지 않을 수 있다. 따라서 동적 계획(Dynamic Planning)은 후보 궤적과 예측된 장애물 움직임을 비교하고 새로운 인지 및 예측 정보가 입력될 때마다 지속적으로 궤적을 갱신한다.
+
+계획 구간(Planning Horizon)은 또 다른 중요한 절충관계(Trade-Off)를 형성한다. 짧은 계획 구간은 계산량을 줄이고 국부적인 변화에 빠르게 대응할 수 있지만 근시안적인 결정(Myopic Decision)을 발생시킬 수 있다. 긴 계획 구간은 회전, 장애물 및 속도 변화에 대한 더 나은 예측을 제공하지만 불확실성과 계산 복잡도를 증가시킨다. 실제 시스템에서는 충분히 긴 기준 경로 또는 행동 계획 구간과 최신 환경 정보를 반영하여 빈번하게 재생성되는 더 짧은 실행 궤적(Executable Trajectory)을 결합하는 경우가 많다.
+
+따라서 궤적 생성은 일회성 계산이 아니라 반복적으로 갱신되는 과정(Receding Process)이다. 각 계획 주기(Planning Cycle)마다 시스템은 현재 상태를 관측하고 환경 정보를 갱신하며, 후보 궤적을 생성하거나 최적화하고, 실행 불가능한 후보를 제거한 다음 적절한 해를 선택하여 그중 일정 구간을 제어기(Controller)에 전달한다. 다음 주기에서는 새롭게 추정된 상태에서 이 과정을 반복함으로써 위치추정 오차, 이동 장애물 및 변화하는 지형에 적응한다.
+
+야외 자율이동로봇(Outdoor AMR)의 경우 궤적 실행 가능성(Trajectory Feasibility)은 일반적인 도로 기하학 이상의 요소를 포함한다. 불규칙한 지형, 경사면, 연석(Curb), 낮은 마찰 노면, 좁은 통로 및 페이로드에 따른 안정성 변화는 실행 가능한 운동의 범위를 변화시킨다. 평면상의 곡률 제한을 만족하는 궤적이라도 지형으로 인해 과도한 롤(Roll), 피치(Pitch), 휠 슬립(Wheel Slip), 서스펜션 운동 또는 하중 이동(Load Transfer)이 발생한다면 적절하지 않을 수 있다. 따라서 주행 가능성 정보(Traversability Information)를 추가적인 궤적 제약조건이나 비용으로 사용할 수 있다.
+
+제어(Control)와의 인터페이스 역시 중요하다. 수학적으로 부드러운 궤적이라도 실제 지연시간(Latency), 액추에이터 한계 및 상태추정 불확실성(State-Estimation Uncertainty) 조건에서 물리적 플랫폼이 이를 추종할 수 없다면 의미가 없다. 궤적 생성기는 적절한 시간적 또는 공간적 해상도로 기준값을 생성하고 자세, 속도, 가속도, 곡률 및 타임스탬프(Timestamp)와 같은 일관된 정보를 제공해야 한다. 이를 통해 계획(Planning)과 제어(Control) 사이에 명확한 인터페이스 계약(Interface Contract)을 구성할 수 있다.
+
+따라서 강건한 구현(Robust Implementation)에서는 궤적 생성을 단순한 곡선 생성이 아니라 제약조건을 고려한 운동 합성(Constrained Motion Synthesis) 문제로 다룬다. 다항식 방식은 경계조건에 기반한 효율적인 운동 생성을 제공하고, 스플라인은 유연하면서 국부적으로 제어 가능한 부드러운 기하학적 표현을 제공하며, 격자 방식은 실행 가능한 대안들을 구조적으로 탐색할 수 있게 한다. 이들은 함께 프레네, 최적화, 샘플링 및 모델 기반 궤적 계획기로 발전하기 위한 실용적인 기반을 형성한다.
+
+보다 넓은 자율주행 소프트웨어 아키텍처(Autonomous Driving Software Architecture)의 관점에서 이러한 기반 기술은 인지 기반 환경 이해와 행동 수준의 의사결정을 실제로 실행 가능한 물리적 운동으로 연결한다. 이후 절에서는 이러한 기반을 확장하여 프레네 계획(Frenet Planning), 다항식 최적화(Polynomial Optimization), 격자 계획(Lattice Planning), 모델 예측 경로 적분(Model Predictive Path Integral, MPPI), 승차감 및 에너지 최적화, 궤적 실행 가능성 검사, 동적 재계획(Dynamic Replanning), 제어기 통합(Controller Integration), 고속 야외 자율이동로봇(High-Speed Outdoor AMR)의 궤적 생성 등을 다룬다.
+
+##  
+
+## 07.02. Frenet Frame Based Trajectory Planning [w/Code]
+
+![](images/image2.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+Frenet frame based trajectory planning transforms vehicle motion from global Cartesian coordinates into a road-relative coordinate system defined by a reference path. Instead of directly planning two-dimensional motion in x and y, the method represents vehicle position using longitudinal progress s along the reference path and lateral displacement d from it. This decomposition simplifies trajectory generation for road-following autonomous vehicles and structured outdoor AMRs.
+
+The reference path forms the geometric foundation of the Frenet coordinate system. It may originate from an HD map, lane centerline, global planner, navigation graph, or previously generated route. Each point along the reference curve is parameterized by accumulated arc length s, while the local tangent and normal directions define longitudinal and lateral axes. Vehicle states can then be projected onto this continuously changing coordinate frame.
+
+Given a vehicle position in Cartesian coordinates, the planner identifies the closest or geometrically corresponding point on the reference path. The arc length of that point becomes the longitudinal coordinate s, while the signed perpendicular distance becomes the lateral coordinate d. Positive and negative lateral values distinguish opposite sides of the reference path according to the coordinate convention used by the planning system.
+
+This representation separates two aspects of driving that are strongly coupled in Cartesian space. Longitudinal motion describes how rapidly the vehicle progresses along the route, while lateral motion describes how it approaches, follows, or departs from the reference path. Speed changes, stopping, and following behavior can therefore be handled mainly through s, while lane positioning, obstacle avoidance, and lateral transitions can be modeled primarily through d.
+
+A Frenet trajectory commonly represents longitudinal and lateral motion as independent time-dependent functions, such as s(t) and d(t). Their derivatives provide longitudinal and lateral velocity, acceleration, and higher-order motion information. Polynomial functions are particularly useful because boundary conditions can specify the current state and desired terminal state while maintaining continuity of velocity and acceleration throughout the planning interval.
+
+Quintic polynomials are frequently applied to lateral trajectory generation because they can satisfy initial and terminal lateral position, velocity, and acceleration constraints. Quartic or quintic polynomials can be used for longitudinal motion depending on whether terminal position, velocity, or both must be constrained. Combining different terminal conditions and planning durations produces a family of candidate trajectories rather than a single predetermined solution.
+
+Candidate generation begins from the current Frenet state of the vehicle. The planner samples possible terminal lateral offsets, target velocities, longitudinal positions, and arrival times over a finite planning horizon. Each sampled terminal state defines boundary conditions for polynomial generation. This process produces multiple combinations of longitudinal and lateral motion that represent alternative ways of accomplishing the requested driving behavior.
+
+For normal path following, candidate terminal lateral offsets can be concentrated near d = 0, corresponding to convergence toward the reference path. During obstacle avoidance or lane transitions, the sampled offsets can expand toward neighboring collision-free regions. Longitudinal samples can simultaneously represent maintaining speed, accelerating, decelerating, stopping, or following another object while the lateral component determines spatial positioning.
+
+The independently generated longitudinal and lateral components must subsequently be combined into complete Frenet trajectories. Samples of s(t), d(t), and their derivatives are evaluated at successive timestamps across the planning horizon. Because the reference path supplies position, heading, and curvature as functions of s, each Frenet sample can be transformed back into Cartesian position and orientation for collision checking and downstream vehicle control.
+
+The Cartesian reconstruction is essential because the vehicle ultimately moves through physical space rather than through an abstract Frenet coordinate system. A lateral displacement d is applied along the local normal direction of the reference path at longitudinal coordinate s. Vehicle heading and curvature are then derived from the relationship between the reference geometry and the changing lateral offset, allowing each candidate to be evaluated against actual environmental geometry.
+
+Not every mathematically generated candidate is physically executable. Feasibility checks reject trajectories that exceed permitted velocity, acceleration, jerk, curvature, steering angle, or other vehicle-specific limits. For outdoor AMRs, additional constraints may include minimum turning radius, wheel slip risk, terrain traversability, slope limits, payload stability, stopping distance, and platform-specific dynamic characteristics.
+
+Collision checking evaluates each feasible trajectory against static and dynamic obstacles. Static obstacles can be tested against the vehicle footprint along the reconstructed Cartesian trajectory. Dynamic obstacles require time-aligned evaluation because their predicted positions change throughout the planning horizon. A trajectory may therefore be geometrically clear at one instant but invalid if the vehicle and an obstacle are predicted to occupy overlapping regions later.
+
+The remaining candidates are ranked through a cost function. Typical terms measure lateral deviation from the desired path, difference from target velocity, acceleration, jerk, curvature, travel time, obstacle clearance, and terminal-state error. Comfort and smoothness can be encouraged by penalizing rapid changes in acceleration or curvature, while progress terms discourage unnecessarily slow trajectories when safe forward motion remains possible.
+
+Cost normalization and weighting require careful engineering because the terms have different physical units and numerical ranges. Excessive weighting of reference-path tracking can discourage necessary obstacle avoidance, whereas excessive progress weighting can favor aggressive motion. Safety-critical requirements should therefore be enforced as hard constraints whenever appropriate rather than relying exclusively on large cost penalties to discourage unsafe candidates.
+
+The selected trajectory is normally only valid for a limited period because perception, localization, prediction, and behavior decisions continuously change. Frenet planning is therefore commonly implemented as a receding-horizon process. The vehicle executes only the initial portion of the selected trajectory, receives updated environmental information, estimates a new initial state, and generates another candidate set during the next planning cycle.
+
+This repeated replanning process provides responsiveness to dynamic environments while preserving short-term motion continuity. However, independently selecting the minimum-cost trajectory at every cycle can cause oscillation between similar candidates. Practical implementations may include consistency costs, previous-trajectory references, hysteresis, terminal-state stabilization, or warm-start information so that newly generated trajectories remain reasonably consistent with the previously executed motion.
+
+The quality of Frenet planning depends strongly on the reference path. Sharp discontinuities, noisy curvature, self-intersections, or poorly parameterized routes can produce unstable coordinate transformations and undesirable trajectories. Reference paths are therefore generally smoothed and represented with sufficient geometric continuity before planning. Reliable calculation of arc length, tangent direction, normal direction, heading, and curvature is particularly important.
+
+Frenet coordinates are especially effective when vehicle motion remains reasonably aligned with a structured reference route. Their advantages become weaker in highly unstructured spaces, during large orientation changes, near complicated intersections, or when multiple reference paths compete. Large lateral offsets can also distort the relationship between Frenet and Cartesian geometry, requiring careful feasibility checks and potentially a transition to another planning representation.
+
+For outdoor AMRs operating on service roads, industrial yards, campuses, ports, or logistics facilities, Frenet planning provides a practical bridge between global routing and local vehicle motion. A global route supplies the reference geometry, behavior planning determines objectives such as following, stopping, or avoidance, and the Frenet planner generates dynamically feasible alternatives that reflect both route progress and local environmental conditions.
+
+The output passed toward trajectory tracking should contain more than a sequence of geometric points. Each sample can include timestamp, Cartesian position, heading, longitudinal velocity, acceleration, curvature, and related reference quantities required by the controller. Maintaining consistent timestamps and coordinate conventions between planning, localization, and control is essential because even a geometrically correct trajectory can become difficult to track when temporal interpretation differs between modules.
+
+Frenet frame based trajectory planning therefore converts a difficult two-dimensional motion search into structured longitudinal and lateral subproblems around a reference path. Polynomial candidate generation, feasibility filtering, collision checking, cost-based selection, Cartesian reconstruction, and continuous replanning together create an efficient trajectory-generation pipeline suitable for autonomous driving and outdoor AMR systems.
+
+프레네 좌표계 기반 궤적 계획(Frenet Frame Based Trajectory Planning)은 차량의 운동을 전역 직교 좌표계(Global Cartesian Coordinates)에서 기준 경로(Reference Path)를 중심으로 정의되는 도로 상대 좌표계(Road-Relative Coordinate System)로 변환한다. 이 방식은 2차원 x, y 공간에서 직접 운동을 계획하는 대신 기준 경로를 따라 이동한 종방향 진행 거리(Longitudinal Progress) s와 기준 경로로부터의 횡방향 변위(Lateral Displacement) d를 사용하여 차량 위치를 표현한다. 이러한 분해는 도로 추종 자율주행차와 구조화된 환경에서 운행하는 야외 자율이동로봇(Outdoor AMR)의 궤적 생성을 단순화한다.
+
+기준 경로(Reference Path)는 프레네 좌표계(Frenet Coordinate System)의 기하학적 기반을 형성한다. 기준 경로는 고정밀 지도(HD Map), 차선 중심선(Lane Centerline), 전역 계획기(Global Planner), 내비게이션 그래프(Navigation Graph) 또는 이전에 생성된 경로로부터 제공될 수 있다. 기준 곡선상의 각 지점은 누적 호 길이(Accumulated Arc Length) s로 매개변수화되며, 국부 접선(Local Tangent)과 법선(Normal Direction)이 종방향 및 횡방향 축을 정의한다. 차량 상태는 이렇게 연속적으로 변화하는 좌표계에 투영될 수 있다.
+
+직교 좌표계(Cartesian Coordinates)에서 차량 위치가 주어지면 계획기(Planner)는 기준 경로상에서 가장 가까운 점 또는 기하학적으로 대응되는 점을 찾는다. 해당 지점의 호 길이(Arc Length)가 종방향 좌표 s가 되고, 기준 경로까지의 부호를 가진 수직 거리(Signed Perpendicular Distance)가 횡방향 좌표 d가 된다. 양수와 음수의 횡방향 값은 계획 시스템에서 사용하는 좌표 규약(Coordinate Convention)에 따라 기준 경로의 서로 반대쪽을 구분한다.
+
+이러한 표현 방식은 직교 좌표 공간(Cartesian Space)에서 강하게 결합되어 있는 주행의 두 가지 요소를 분리한다. 종방향 운동(Longitudinal Motion)은 차량이 경로를 따라 얼마나 빠르게 진행하는지를 나타내며, 횡방향 운동(Lateral Motion)은 차량이 기준 경로에 접근하고 추종하거나 기준 경로에서 벗어나는 방식을 나타낸다. 따라서 속도 변화, 정지 및 추종 행동은 주로 s를 통해 처리하고, 차선 내 위치 조정, 장애물 회피 및 횡방향 전환은 주로 d를 통해 모델링할 수 있다.
+
+프레네 궤적(Frenet Trajectory)은 일반적으로 종방향 및 횡방향 운동을 s(t)와 d(t)와 같은 독립적인 시간 함수(Time-Dependent Function)로 표현한다. 이 함수들의 미분값은 종방향 및 횡방향 속도, 가속도 및 고차 운동 정보를 제공한다. 특히 다항함수(Polynomial Function)는 현재 상태와 원하는 종단 상태(Terminal State)를 경계조건(Boundary Condition)으로 지정하면서 전체 계획 구간에서 속도와 가속도의 연속성을 유지할 수 있기 때문에 유용하다.
+
+5차 다항식(Quintic Polynomial)은 초기 및 최종 횡방향 위치, 속도, 가속도 제약조건을 모두 만족할 수 있기 때문에 횡방향 궤적 생성에 자주 사용된다. 종방향 운동에는 최종 위치, 속도 또는 두 조건을 모두 제한해야 하는지에 따라 4차 또는 5차 다항식(Quartic or Quintic Polynomial)을 사용할 수 있다. 다양한 종단 조건과 계획 시간을 조합하면 하나의 미리 결정된 해가 아니라 여러 후보 궤적(Candidate Trajectory)을 생성할 수 있다.
+
+후보 생성(Candidate Generation)은 차량의 현재 프레네 상태(Current Frenet State)에서 시작한다. 계획기는 유한한 계획 구간(Finite Planning Horizon)에서 가능한 최종 횡방향 오프셋(Terminal Lateral Offset), 목표 속도(Target Velocity), 종방향 위치(Longitudinal Position), 도착 시간(Arrival Time)을 샘플링한다. 각각의 샘플링된 종단 상태는 다항식 생성의 경계조건을 정의하며, 이 과정을 통해 요구된 주행 행동을 수행할 수 있는 다양한 종방향 및 횡방향 운동 조합이 생성된다.
+
+일반적인 경로 추종(Path Following)에서는 후보 종단 횡방향 오프셋을 d = 0 부근에 집중시켜 차량이 기준 경로로 수렴하도록 할 수 있다. 장애물 회피 또는 차선 전환 상황에서는 충돌이 발생하지 않는 주변 영역까지 샘플링 오프셋을 확장할 수 있다. 동시에 종방향 샘플은 속도 유지, 가속, 감속, 정지 또는 다른 객체 추종을 표현할 수 있으며, 횡방향 요소는 공간적인 차량 위치를 결정한다.
+
+독립적으로 생성된 종방향 및 횡방향 요소는 이후 완전한 프레네 궤적(Complete Frenet Trajectory)으로 결합되어야 한다. 계획 구간의 연속적인 타임스탬프(Timestamp)에서 s(t), d(t) 및 각각의 미분값을 계산한다. 기준 경로가 s에 따른 위치, 방향각(Heading), 곡률(Curvature)을 제공하므로 각 프레네 샘플을 다시 직교 좌표계 위치와 자세로 변환하여 충돌 검사(Collision Checking)와 하위 차량 제어(Downstream Vehicle Control)에 사용할 수 있다.
+
+직교 좌표계 복원(Cartesian Reconstruction)은 실제 차량이 추상적인 프레네 좌표계가 아니라 물리적 공간에서 이동하기 때문에 필수적이다. 횡방향 변위 d는 종방향 좌표 s에 해당하는 기준 경로의 국부 법선 방향(Local Normal Direction)을 따라 적용된다. 이후 차량 방향각과 곡률은 기준 경로의 기하학적 특성과 변화하는 횡방향 오프셋의 관계로부터 계산되며, 이를 통해 각 후보를 실제 환경의 기하학적 구조와 비교하여 평가할 수 있다.
+
+수학적으로 생성 가능한 모든 후보가 물리적으로 실행 가능한 것은 아니다. 실행 가능성 검사(Feasibility Check)는 허용 가능한 속도, 가속도, 저크(Jerk), 곡률, 조향각(Steering Angle) 또는 기타 차량별 제한조건을 초과하는 궤적을 제거한다. 야외 자율이동로봇(Outdoor AMR)의 경우 최소 회전반경, 휠 슬립(Wheel Slip) 위험, 지형 주행 가능성(Terrain Traversability), 경사 한계, 페이로드 안정성(Payload Stability), 정지 거리 및 플랫폼별 동역학 특성도 추가적인 제약조건이 될 수 있다.
+
+충돌 검사(Collision Checking)는 실행 가능한 각 궤적을 정적 및 동적 장애물과 비교하여 평가한다. 정적 장애물은 복원된 직교 좌표계 궤적을 따라 차량의 점유 영역(Vehicle Footprint)을 검사할 수 있다. 동적 장애물은 계획 구간 동안 예측 위치가 지속적으로 변화하기 때문에 시간 정렬 평가(Time-Aligned Evaluation)가 필요하다. 따라서 특정 시점에 기하학적으로 안전한 궤적이라도 이후 차량과 장애물이 동일한 영역을 점유할 것으로 예측되면 유효하지 않은 궤적으로 판단된다.
+
+남아 있는 후보들은 비용함수(Cost Function)를 통해 평가되고 순위화된다. 일반적인 비용 항목은 원하는 경로로부터의 횡방향 편차(Lateral Deviation), 목표 속도와의 차이, 가속도, 저크, 곡률, 이동 시간, 장애물과의 거리 및 종단 상태 오차(Terminal-State Error)를 측정한다. 가속도나 곡률의 급격한 변화를 페널티(Penalty)로 부여하여 승차감과 부드러움을 향상시킬 수 있으며, 진행 비용(Progress Cost)을 사용하여 안전한 전진이 가능한 상황에서 불필요하게 느린 궤적이 선택되는 것을 방지할 수 있다.
+
+비용 정규화(Cost Normalization)와 가중치 설정(Weighting)은 각 항목이 서로 다른 물리 단위와 수치 범위를 가지므로 신중하게 설계해야 한다. 기준 경로 추종에 지나치게 높은 가중치를 적용하면 필요한 장애물 회피를 방해할 수 있으며, 진행성에 지나치게 높은 가중치를 부여하면 공격적인 운동을 선호할 수 있다. 따라서 안전에 중요한 요구사항(Safety-Critical Requirement)은 위험한 후보를 억제하기 위해 큰 비용값에만 의존하기보다 가능한 경우 하드 제약조건(Hard Constraint)으로 적용해야 한다.
+
+선택된 궤적은 인지(Perception), 위치추정(Localization), 예측(Prediction), 행동 결정(Behavior Decision)이 지속적으로 변화하기 때문에 일반적으로 제한된 시간 동안만 유효하다. 따라서 프레네 계획(Frenet Planning)은 일반적으로 이동 지평선 방식(Receding-Horizon Process)으로 구현된다. 차량은 선택된 궤적의 초기 일부만 실행하고, 갱신된 환경 정보를 수신하며, 새로운 초기 상태를 추정한 후 다음 계획 주기에서 다시 후보 궤적 집합을 생성한다.
+
+이러한 반복적 재계획(Replanning) 과정은 단기적인 운동 연속성을 유지하면서 동적 환경에 대응할 수 있도록 한다. 그러나 매 계획 주기마다 최소 비용 궤적만 독립적으로 선택하면 서로 유사한 후보 사이에서 진동(Oscillation)이 발생할 수 있다. 실제 구현에서는 새롭게 생성된 궤적이 이전에 실행된 운동과 적절한 일관성을 유지하도록 일관성 비용(Consistency Cost), 이전 궤적 기준(Previous-Trajectory Reference), 히스테리시스(Hysteresis), 종단 상태 안정화(Terminal-State Stabilization) 또는 웜 스타트(Warm Start) 정보를 사용할 수 있다.
+
+프레네 계획의 품질은 기준 경로(Reference Path)의 품질에 크게 의존한다. 급격한 불연속, 불규칙한 곡률, 자기 교차(Self-Intersection) 또는 잘못 매개변수화된 경로는 불안정한 좌표 변환과 바람직하지 않은 궤적을 생성할 수 있다. 따라서 기준 경로는 일반적으로 계획에 사용하기 전에 충분한 기하학적 연속성을 갖도록 평활화(Smoothing)한다. 특히 호 길이, 접선 방향, 법선 방향, 방향각 및 곡률을 신뢰성 있게 계산하는 것이 중요하다.
+
+프레네 좌표(Frenet Coordinates)는 차량 운동이 구조화된 기준 경로와 적절하게 정렬되어 있는 경우 특히 효과적이다. 그러나 매우 비정형적인 공간, 큰 방향 변화가 발생하는 상황, 복잡한 교차로 주변 또는 여러 기준 경로가 경쟁하는 상황에서는 장점이 감소할 수 있다. 큰 횡방향 오프셋 역시 프레네 좌표계와 직교 좌표계 사이의 기하학적 관계를 왜곡할 수 있으므로 신중한 실행 가능성 검사가 필요하며 경우에 따라 다른 계획 표현 방식으로 전환해야 한다.
+
+서비스 도로, 산업단지 야드, 캠퍼스, 항만 또는 물류 시설에서 운행하는 야외 자율이동로봇(Outdoor AMR)의 경우 프레네 계획은 전역 경로 계획(Global Routing)과 국부 차량 운동(Local Vehicle Motion)을 연결하는 실용적인 방법을 제공한다. 전역 경로가 기준 기하학을 제공하고 행동 계획이 추종, 정지 또는 회피와 같은 목표를 결정하면 프레네 계획기는 경로 진행 상황과 국부 환경 조건을 동시에 반영하는 동역학적으로 실행 가능한 대안들을 생성한다.
+
+궤적 추종(Trajectory Tracking) 단계로 전달되는 출력은 단순한 기하학적 점들의 집합 이상이어야 한다. 각 샘플에는 타임스탬프, 직교 좌표계 위치, 방향각, 종방향 속도, 가속도, 곡률 및 제어기에 필요한 관련 기준값이 포함될 수 있다. 계획, 위치추정 및 제어 모듈 사이에서 일관된 타임스탬프와 좌표계 규약을 유지하는 것이 중요하며, 기하학적으로 정확한 궤적이라도 모듈 간 시간 해석이 서로 다르면 정확하게 추종하기 어려울 수 있다.
+
+따라서 프레네 좌표계 기반 궤적 계획(Frenet Frame Based Trajectory Planning)은 복잡한 2차원 운동 탐색 문제를 기준 경로를 중심으로 구조화된 종방향 및 횡방향 하위 문제로 변환한다. 다항식 기반 후보 생성(Polynomial Candidate Generation), 실행 가능성 필터링(Feasibility Filtering), 충돌 검사(Collision Checking), 비용 기반 선택(Cost-Based Selection), 직교 좌표계 복원(Cartesian Reconstruction), 지속적인 재계획(Continuous Replanning)이 결합되어 자율주행(Autonomous Driving)과 야외 자율이동로봇(Outdoor AMR)에 적합한 효율적인 궤적 생성 파이프라인(Trajectory-Generation Pipeline)을 구성한다.
+
+##  
+
+## 07.03. Polynomial Trajectory Optimization JMT [w/Code]
+
+![](images/image3.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+Polynomial trajectory optimization provides a compact mathematical method for generating smooth vehicle motion between specified boundary states. Instead of optimizing every trajectory sample independently, the planner represents motion with a small set of polynomial coefficients. By constraining position, velocity, and acceleration at the beginning and end of a planning interval, a continuous trajectory can be obtained efficiently and evaluated for feasibility, comfort, and safety.
+
+A widely used formulation is the Jerk Minimizing Trajectory, or JMT, which constructs a polynomial whose integrated squared jerk is minimized under prescribed boundary conditions. Jerk is the derivative of acceleration and represents how rapidly acceleration changes with time. Excessive jerk produces uncomfortable motion, abrupt actuator commands, payload disturbance, and poor tracking behavior, making jerk reduction important for autonomous vehicles and outdoor AMRs.
+
+A fifth-order polynomial is particularly suitable for JMT because it contains six coefficients and can therefore satisfy six boundary constraints. For a scalar motion variable p(t), the trajectory may be written as p(t)=a0+a1t+a2t²+a3t³+a4t⁴+a5t⁵. Its first and second derivatives describe velocity and acceleration, while the third derivative represents jerk and becomes a quadratic function of time.
+
+The initial state provides position p(0), velocity p\'(0), and acceleration p\'\'(0), while the desired terminal state at time T provides p(T), p\'(T), and p\'\'(T). The first three polynomial coefficients are obtained directly from the initial conditions. The remaining coefficients are calculated by solving a small linear system derived from the terminal constraints, making trajectory generation computationally inexpensive.
+
+This boundary-value formulation separates trajectory shape from the larger planning problem. Behavior planning can specify a desired terminal state such as a target position, speed, or stopping condition, while the polynomial generator determines a smooth connection from the current state. Multiple terminal states and durations can be sampled, allowing the system to construct a family of trajectories rather than depending on one fixed motion hypothesis.
+
+JMT is closely associated with Frenet-frame trajectory planning. Longitudinal progress along a reference path can be represented by s(t), while lateral displacement can be represented by d(t). Independent polynomial trajectories can therefore be generated for longitudinal and lateral motion before being combined and transformed into Cartesian coordinates. This decomposition makes structured road and route-following problems easier to formulate.
+
+For lateral planning, a quintic polynomial can connect the current lateral position, lateral velocity, and lateral acceleration to a desired terminal offset with specified terminal derivatives. A centerline-following candidate may target d=0, while avoidance or lane-transition candidates may target nonzero lateral offsets. Different terminal times determine how rapidly the lateral maneuver develops and consequently influence lateral acceleration and jerk.
+
+Longitudinal planning can similarly describe acceleration, deceleration, stopping, speed maintenance, or object following. When terminal position, velocity, and acceleration are all constrained, a quintic formulation is appropriate. If terminal position does not need to be fixed and the main objective is reaching a desired terminal velocity, a lower constraint formulation such as a quartic polynomial can provide sufficient degrees of freedom.
+
+The term "jerk minimizing" does not mean that every generated JMT is automatically the best complete vehicle trajectory. The polynomial minimizes jerk within the mathematical boundary conditions used to construct it, but those boundary conditions may themselves lead to excessive speed, curvature, acceleration, or collision risk. JMT therefore acts as a smooth candidate generator inside a broader constrained trajectory planning and optimization pipeline.
+
+Candidate generation typically samples terminal time T together with desired terminal positions, lateral offsets, or velocities. Each combination produces a different polynomial trajectory. Short terminal times can create aggressive acceleration or lateral motion, while longer times usually produce smoother transitions but may reduce progress or responsiveness. Sampling several durations enables the planner to explicitly compare these competing motion characteristics.
+
+After polynomial coefficients are determined, the trajectory is discretized at planning timestamps. Position, velocity, acceleration, and jerk are calculated analytically from the polynomial and its derivatives. These samples provide both the trajectory geometry and the dynamic quantities needed for evaluation. Analytical derivatives are valuable because they avoid noisy numerical differentiation and maintain consistency between the planned position and its higher-order motion states.
+
+Feasibility filtering should occur before detailed ranking. Candidates that violate maximum or minimum velocity, acceleration, jerk, curvature, steering, or other platform constraints can be removed immediately. This prevents the optimization stage from selecting a numerically attractive but physically impossible trajectory. Outdoor AMRs may additionally require constraints related to turning radius, terrain slope, wheel traction, payload stability, and braking capability.
+
+When JMT is generated in Frenet coordinates, candidates must eventually be reconstructed in Cartesian space. Values of s(t) determine locations along the reference path, while d(t) offsets those locations along the local normal direction. The resulting Cartesian position, heading, and curvature can then be calculated. This reconstruction is necessary for checking vehicle geometry, road boundaries, obstacles, and compatibility with the downstream controller.
+
+Collision checking introduces environmental constraints that are not contained in the polynomial itself. The vehicle footprint can be propagated along each candidate and compared with static obstacles, drivable-area boundaries, and predicted dynamic-object positions. Because trajectories are time parameterized, dynamic collision checking can evaluate whether the ego vehicle and another moving object are expected to occupy conflicting regions at corresponding times.
+
+A cost function can then compare the remaining feasible candidates. Jerk cost is naturally important for JMT, but practical trajectory selection can also include acceleration, lateral displacement, deviation from target speed, terminal-state error, travel time, obstacle clearance, curvature, energy consumption, and deviation from the previous trajectory. The selected solution therefore reflects overall driving quality rather than jerk minimization alone.
+
+Integrated squared jerk can be evaluated over the trajectory duration as a smoothness measure. Since jerk is analytically available from the polynomial, this quantity can be calculated efficiently. However, raw cost terms often have different scales and units, so normalization and carefully chosen weights are required. Safety-related limits should remain hard constraints rather than being converted entirely into weighted optimization penalties.
+
+Numerical conditioning deserves attention when solving polynomial coefficients. Large planning times or poorly scaled state variables can produce matrices with unfavorable numerical properties. Practical implementations can improve robustness through appropriate time normalization, consistent units, bounded planning horizons, and stable linear algebra routines. Coefficient calculation should also be validated against the requested terminal conditions to detect implementation or precision errors.
+
+Trajectory continuity across replanning cycles is another important consideration. A planner may calculate an individually smooth JMT at every cycle but still produce discontinuous behavior if the selected terminal condition changes abruptly between cycles. Using the current executed trajectory as the next initial state, penalizing deviation from the previous solution, or maintaining consistent terminal objectives can reduce oscillation and improve temporal stability.
+
+The computational efficiency of polynomial generation makes JMT attractive for real-time planning. Solving a small coefficient system and evaluating closed-form polynomials is considerably cheaper than solving a large nonlinear optimization problem over every trajectory state. This allows many candidate terminal states and durations to be tested within each planning cycle, which is useful when the environment changes rapidly and frequent replanning is required.
+
+JMT nevertheless has limitations. A polynomial does not directly understand obstacles, road topology, vehicle interaction, or terrain conditions, and a single polynomial segment may be unsuitable for highly complex maneuvers. The method is therefore most effective when embedded within a planner that supplies meaningful terminal states, reference geometry, collision constraints, feasibility checks, and repeated replanning rather than treating the polynomial as a complete planning system.
+
+For outdoor AMRs, jerk-aware trajectory generation has additional value because abrupt acceleration changes can affect heavy payloads, wheel-ground traction, suspension response, sensor stability, and mechanical durability. A smooth trajectory can reduce load transfer and improve controller tracking, but terrain-dependent speed and stability constraints must still be incorporated because minimizing jerk alone cannot guarantee safe motion on slopes or irregular surfaces.
+
+In a complete autonomous driving software stack, polynomial JMT optimization connects behavior-level objectives with executable motion references. Behavior planning determines what the vehicle should accomplish, Frenet or Cartesian geometry defines where motion can occur, polynomial generation constructs smooth candidates, and feasibility and collision modules remove invalid solutions. Cost evaluation then selects a trajectory suitable for delivery to the tracking controller.
+
+Polynomial trajectory optimization with JMT is therefore best understood as an efficient constrained motion-generation technique rather than an isolated smoothness formula. Its strength comes from combining explicit boundary states, analytical derivatives, low computational cost, and controllable trajectory duration. When integrated with candidate sampling, Frenet planning, physical constraints, collision checking, cost evaluation, and receding-horizon replanning, it provides a practical foundation for real-time autonomous trajectory generation.
+
+다항식 궤적 최적화(Polynomial Trajectory Optimization)는 지정된 경계 상태(Boundary State) 사이에서 부드러운 차량 운동을 생성하기 위한 간결한 수학적 방법을 제공한다. 모든 궤적 샘플을 독립적으로 최적화하는 대신 계획기(Planner)는 소수의 다항식 계수(Polynomial Coefficients)를 이용하여 운동을 표현한다. 계획 구간의 시작과 끝에서 위치, 속도, 가속도를 제한함으로써 연속적인 궤적을 효율적으로 생성하고 실행 가능성, 승차감 및 안전성을 평가할 수 있다.
+
+널리 사용되는 방식 중 하나는 저크 최소화 궤적(Jerk Minimizing Trajectory, JMT)으로, 지정된 경계조건(Boundary Conditions)에서 저크 제곱의 적분값(Integrated Squared Jerk)이 최소화되도록 다항식을 구성한다. 저크(Jerk)는 가속도의 시간 미분으로 가속도가 시간에 따라 얼마나 빠르게 변화하는지를 나타낸다. 과도한 저크는 불편한 움직임, 급격한 액추에이터 명령, 페이로드(Payload)의 흔들림 및 불안정한 추종 동작을 발생시키므로 자율주행차와 야외 자율이동로봇(Outdoor AMR)에서 저크 감소는 중요하다.
+
+5차 다항식(Fifth-Order Polynomial)은 6개의 계수를 포함하므로 6개의 경계 제약조건을 만족할 수 있어 JMT에 특히 적합하다. 스칼라 운동 변수(Scalar Motion Variable) p(t)에 대해 궤적은 p(t)=a0+a1t+a2t²+a3t³+a4t⁴+a5t⁵와 같이 표현할 수 있다. 이 식의 1차 및 2차 미분은 각각 속도와 가속도를 나타내며, 3차 미분은 저크를 나타내고 시간에 대한 2차 함수가 된다.
+
+초기 상태(Initial State)는 위치 p(0), 속도 p\'(0), 가속도 p\'\'(0)를 제공하고, 시간 T에서 원하는 종단 상태(Terminal State)는 p(T), p\'(T), p\'\'(T)를 제공한다. 처음 세 개의 다항식 계수는 초기 조건으로부터 직접 계산할 수 있다. 나머지 계수들은 종단 제약조건에서 유도되는 작은 선형 시스템(Linear System)을 풀어 계산할 수 있으므로 궤적 생성에 필요한 계산 비용이 낮다.
+
+이러한 경계값 공식화(Boundary-Value Formulation)는 궤적 형상과 더 큰 범위의 계획 문제를 분리한다. 행동 계획(Behavior Planning)은 목표 위치, 목표 속도 또는 정지 조건과 같은 원하는 종단 상태를 지정할 수 있으며, 다항식 생성기(Polynomial Generator)는 현재 상태에서 해당 종단 상태까지 부드럽게 연결되는 운동을 결정한다. 여러 종단 상태와 지속시간(Duration)을 샘플링함으로써 하나의 고정된 운동 가설에 의존하지 않고 다양한 궤적을 생성할 수 있다.
+
+JMT는 프레네 좌표계 기반 궤적 계획(Frenet-Frame Trajectory Planning)과 밀접하게 연관되어 있다. 기준 경로를 따라 이동하는 종방향 진행(Longitudinal Progress)은 s(t)로 표현하고 횡방향 변위(Lateral Displacement)는 d(t)로 표현할 수 있다. 따라서 종방향 및 횡방향 운동에 대해 독립적인 다항식 궤적을 생성한 후 이를 결합하고 직교 좌표계(Cartesian Coordinates)로 변환할 수 있다. 이러한 분해는 구조화된 도로 및 경로 추종 문제를 보다 쉽게 공식화할 수 있도록 한다.
+
+횡방향 계획(Lateral Planning)에서는 5차 다항식을 이용하여 현재 횡방향 위치, 횡방향 속도, 횡방향 가속도를 지정된 종단 미분값을 갖는 원하는 최종 오프셋(Terminal Offset)에 연결할 수 있다. 중앙선 추종 후보(Centerline-Following Candidate)는 d=0을 목표로 할 수 있으며, 장애물 회피 또는 차선 전환 후보는 0이 아닌 횡방향 오프셋을 목표로 할 수 있다. 서로 다른 종단 시간은 횡방향 기동이 얼마나 빠르게 진행되는지를 결정하며 결과적으로 횡가속도와 저크에 영향을 준다.
+
+종방향 계획(Longitudinal Planning) 역시 가속, 감속, 정지, 속도 유지 또는 객체 추종을 표현할 수 있다. 종단 위치, 속도 및 가속도를 모두 제한하는 경우에는 5차 다항식이 적합하다. 종단 위치를 고정할 필요가 없고 원하는 종단 속도에 도달하는 것이 주요 목표라면 4차 다항식(Quartic Polynomial)과 같이 더 적은 제약조건을 사용하는 방식으로도 충분한 자유도(Degrees of Freedom)를 확보할 수 있다.
+
+저크 최소화(Jerk Minimizing)라는 표현이 생성된 모든 JMT가 자동으로 전체 차량 궤적 중 최적의 해라는 의미는 아니다. 다항식은 이를 구성할 때 적용된 수학적 경계조건 내에서 저크를 최소화하지만, 해당 경계조건 자체가 과도한 속도, 곡률, 가속도 또는 충돌 위험을 발생시킬 수 있다. 따라서 JMT는 완전한 제약 기반 궤적 계획 및 최적화 파이프라인(Constrained Trajectory Planning and Optimization Pipeline) 내부에서 부드러운 후보를 생성하는 역할을 수행한다.
+
+후보 생성(Candidate Generation)은 일반적으로 원하는 종단 위치, 횡방향 오프셋 또는 속도와 함께 종단 시간 T를 샘플링한다. 각각의 조합은 서로 다른 다항식 궤적을 생성한다. 짧은 종단 시간은 공격적인 가속이나 횡방향 운동을 발생시킬 수 있으며, 긴 종단 시간은 일반적으로 더 부드러운 전환을 제공하지만 진행성 또는 반응성을 감소시킬 수 있다. 여러 지속시간을 샘플링하면 계획기가 이러한 상충되는 운동 특성을 명시적으로 비교할 수 있다.
+
+다항식 계수가 결정되면 계획 타임스탬프(Planning Timestamp)에 따라 궤적을 이산화(Discretization)한다. 위치, 속도, 가속도 및 저크는 다항식과 그 미분식으로부터 해석적으로 계산된다. 이러한 샘플은 궤적의 기하학적 형상뿐만 아니라 평가에 필요한 동적 물리량도 제공한다. 해석적 미분(Analytical Derivative)은 잡음이 발생할 수 있는 수치 미분(Numerical Differentiation)을 사용하지 않고 계획된 위치와 고차 운동 상태 사이의 일관성을 유지할 수 있다는 장점이 있다.
+
+상세한 후보 평가에 앞서 실행 가능성 필터링(Feasibility Filtering)을 수행해야 한다. 최대 또는 최소 속도, 가속도, 저크, 곡률, 조향 또는 기타 플랫폼 제약조건을 위반하는 후보는 즉시 제거할 수 있다. 이를 통해 최적화 단계에서 수치적으로는 매력적이지만 물리적으로 실행 불가능한 궤적이 선택되는 것을 방지한다. 야외 자율이동로봇에서는 회전반경, 지형 경사, 휠 접지력(Wheel Traction), 페이로드 안정성 및 제동 성능과 관련된 추가 제약조건도 고려해야 할 수 있다.
+
+JMT가 프레네 좌표(Frenet Coordinates)에서 생성되는 경우 후보 궤적은 최종적으로 직교 좌표 공간(Cartesian Space)으로 복원되어야 한다. s(t)의 값은 기준 경로상의 위치를 결정하며, d(t)는 해당 위치를 국부 법선 방향(Local Normal Direction)으로 이동시킨다. 이후 직교 좌표계 위치, 방향각(Heading) 및 곡률을 계산할 수 있다. 이러한 복원은 차량 형상, 도로 경계, 장애물 및 하위 제어기(Downstream Controller)와의 호환성을 검사하기 위해 필요하다.
+
+충돌 검사(Collision Checking)는 다항식 자체에는 포함되지 않은 환경 제약조건(Environmental Constraints)을 추가한다. 각 후보 궤적을 따라 차량 점유 영역(Vehicle Footprint)을 이동시키면서 정적 장애물, 주행 가능 영역의 경계 및 예측된 동적 객체 위치와 비교할 수 있다. 궤적은 시간에 따라 매개변수화되어 있으므로 동적 충돌 검사를 통해 자차(Ego Vehicle)와 다른 이동 객체가 동일한 시간에 충돌 영역을 점유할 가능성이 있는지를 평가할 수 있다.
+
+이후 비용함수(Cost Function)를 이용하여 남아 있는 실행 가능한 후보들을 비교할 수 있다. 저크 비용(Jerk Cost)은 JMT에서 당연히 중요한 요소이지만, 실제 궤적 선택에는 가속도, 횡방향 변위, 목표 속도 편차, 종단 상태 오차, 이동 시간, 장애물과의 거리, 곡률, 에너지 소비 및 이전 궤적으로부터의 편차도 포함될 수 있다. 따라서 선택된 해는 단순한 저크 최소화가 아니라 전체적인 주행 품질을 반영한다.
+
+저크 제곱 적분값(Integrated Squared Jerk)은 궤적 지속시간 동안의 부드러움을 평가하는 척도로 사용할 수 있다. 저크는 다항식으로부터 해석적으로 얻을 수 있으므로 이 값을 효율적으로 계산할 수 있다. 그러나 원시 비용 항목(Raw Cost Terms)은 서로 다른 크기와 단위를 가지므로 정규화(Normalization)와 신중하게 설정된 가중치가 필요하다. 안전과 관련된 제한조건은 모두 가중 최적화 페널티로 변환하기보다는 하드 제약조건(Hard Constraints)으로 유지하는 것이 적절하다.
+
+다항식 계수를 계산할 때는 수치적 조건(Numerical Conditioning)에도 주의해야 한다. 긴 계획 시간이나 적절하게 스케일링되지 않은 상태 변수는 수치적으로 불리한 특성을 가진 행렬을 생성할 수 있다. 실제 구현에서는 적절한 시간 정규화(Time Normalization), 일관된 단위, 제한된 계획 구간(Bounded Planning Horizon), 안정적인 선형대수 연산을 사용하여 강건성(Robustness)을 향상시킬 수 있다. 또한 구현 오류나 정밀도 문제를 검출하기 위해 계산된 계수가 요구된 종단 조건을 만족하는지 검증해야 한다.
+
+재계획 주기(Replanning Cycle) 사이의 궤적 연속성도 중요한 고려사항이다. 계획기가 각 주기마다 개별적으로 부드러운 JMT를 계산하더라도 선택되는 종단 조건이 주기마다 급격하게 변화하면 전체 차량 운동에서는 불연속적인 동작이 발생할 수 있다. 현재 실행 중인 궤적을 다음 계획의 초기 상태로 사용하거나 이전 해와의 편차에 페널티를 부여하고 일관된 종단 목표를 유지하면 진동을 줄이고 시간적 안정성(Temporal Stability)을 향상시킬 수 있다.
+
+다항식 생성의 높은 계산 효율성(Computational Efficiency)은 JMT를 실시간 계획(Real-Time Planning)에 적합하게 만든다. 작은 계수 시스템을 풀고 폐쇄형 다항식(Closed-Form Polynomial)을 계산하는 것은 모든 궤적 상태를 대상으로 대규모 비선형 최적화(Nonlinear Optimization)를 수행하는 것보다 계산 비용이 상당히 낮다. 따라서 각 계획 주기에서 다수의 종단 상태와 지속시간을 시험할 수 있으며, 환경이 빠르게 변화하여 빈번한 재계획이 필요한 상황에서 유용하다.
+
+그러나 JMT에도 한계가 있다. 다항식 자체는 장애물, 도로 위상(Road Topology), 차량 간 상호작용 또는 지형 조건을 직접 이해하지 못하며, 하나의 다항식 구간만으로는 매우 복잡한 기동을 표현하기 어려울 수 있다. 따라서 JMT는 다항식 자체를 완전한 계획 시스템으로 사용하는 것보다 의미 있는 종단 상태, 기준 기하학, 충돌 제약조건, 실행 가능성 검사 및 반복적인 재계획을 제공하는 상위 계획기 내부에 통합할 때 가장 효과적이다.
+
+야외 자율이동로봇(Outdoor AMR)에서는 저크를 고려한 궤적 생성(Jerk-Aware Trajectory Generation)이 추가적인 가치를 가진다. 급격한 가속도 변화는 무거운 페이로드, 바퀴와 지면 사이의 접지력, 서스펜션 반응, 센서 안정성 및 기계적 내구성에 영향을 줄 수 있다. 부드러운 궤적은 하중 이동(Load Transfer)을 줄이고 제어기의 추종 성능을 향상시킬 수 있지만, 저크를 최소화하는 것만으로 경사로나 불규칙한 지형에서 안전한 운동을 보장할 수 없으므로 지형 의존적 속도 및 안정성 제약조건을 함께 적용해야 한다.
+
+완전한 자율주행 소프트웨어 스택(Autonomous Driving Software Stack)에서 다항식 JMT 최적화는 행동 수준의 목표(Behavior-Level Objective)를 실행 가능한 운동 기준값(Executable Motion Reference)과 연결한다. 행동 계획은 차량이 수행해야 할 목표를 결정하고, 프레네 또는 직교 좌표계 기하학은 운동이 가능한 공간을 정의하며, 다항식 생성은 부드러운 후보를 생성한다. 이후 실행 가능성 검사와 충돌 검사 모듈이 유효하지 않은 해를 제거하고, 비용 평가를 통해 궤적 추종 제어기(Trajectory Tracking Controller)에 전달할 적절한 궤적을 선택한다.
+
+따라서 JMT를 이용한 다항식 궤적 최적화(Polynomial Trajectory Optimization with JMT)는 독립적인 부드러움 공식이라기보다 효율적인 제약 기반 운동 생성 기법(Constrained Motion-Generation Technique)으로 이해하는 것이 적절하다. 명시적인 경계 상태, 해석적 미분, 낮은 계산 비용 및 조절 가능한 궤적 지속시간을 결합하는 것이 핵심적인 장점이다. 후보 샘플링, 프레네 계획, 물리적 제약조건, 충돌 검사, 비용 평가 및 이동 지평선 재계획(Receding-Horizon Replanning)과 통합하면 실시간 자율 궤적 생성을 위한 실용적인 기반을 제공한다.
+
+##  
+
+## 07.04. Lattice Planner for Structured Environments [w/Code]
+
+![](images/image4.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+A lattice planner generates trajectories by searching a structured set of dynamically meaningful motion alternatives rather than exploring arbitrary points in continuous space. It is particularly effective in environments where roads, lanes, corridors, intersections, or predefined routes impose strong geometric structure. For autonomous vehicles and outdoor AMRs, the lattice provides a computational bridge between route-level planning and physically executable local motion.
+
+The fundamental idea is to discretize selected dimensions of the vehicle state space into a collection of nodes and feasible transitions. A node may represent longitudinal position, lateral offset, heading, velocity, or combinations of these quantities. Connections between nodes represent motion primitives that the vehicle can actually execute, allowing the search graph to encode vehicle motion constraints instead of treating the platform as a dimensionless point.
+
+This distinction separates lattice planning from conventional occupancy-grid path search. A grid planner may connect neighboring cells using simple geometric transitions, whereas a state lattice can incorporate heading, curvature, steering behavior, and vehicle kinematics directly into its edges. Consequently, trajectories discovered through the lattice are more likely to satisfy minimum turning radius, steering limits, directional constraints, and other platform-specific requirements.
+
+Structured environments provide natural coordinates for constructing the lattice. A reference path, lane centerline, road boundary, warehouse corridor, or logistics route can define the longitudinal direction, while candidate nodes are distributed across allowable lateral positions. Successive longitudinal stations create layers of possible vehicle states, producing a graph that represents alternative ways of progressing through the environment while remaining related to the intended route.
+
+The lattice resolution determines the density of this search space. Fine longitudinal, lateral, heading, or velocity resolution increases the number of available maneuvers and can improve trajectory quality, but it also increases memory usage and search complexity. Coarser discretization reduces computational cost but may eliminate useful solutions. Practical designs therefore balance resolution against vehicle size, maneuverability, environment complexity, and real-time planning requirements.
+
+Motion primitives form the edges of the lattice and are central to its physical meaning. A primitive describes a feasible transition from one discrete state to another and may represent straight driving, gradual steering, lane shifting, turning, acceleration, deceleration, or stopping. These motions can be generated analytically using polynomials or splines, integrated from a vehicle model, or precomputed offline and stored in a reusable primitive library.
+
+Precomputed motion primitives can significantly reduce online computation because expensive trajectory construction is performed before deployment. Primitive endpoints are selected to align with the discretized state lattice, allowing the same motion patterns to be translated and rotated as required. For vehicles with consistent kinematic properties, this approach creates a compact library of verified transitions that can be searched rapidly during operation.
+
+Alternatively, motion primitives can be generated online when local conditions require greater flexibility. The planner may connect sampled terminal states using polynomial trajectory generation, Frenet-frame methods, or numerical integration. Online generation supports varying speed, payload, terrain, and maneuver objectives, but requires additional computation. Hybrid implementations can combine a reusable primitive library with locally optimized trajectories when predefined motions are insufficient.
+
+A lattice can be constructed in Cartesian coordinates, road-relative coordinates, or a combination of state variables. For structured route-following applications, Frenet-style longitudinal and lateral coordinates are particularly convenient because nodes can be sampled according to progress along a reference path and offset from it. Heading and velocity dimensions may then be added when the planner must distinguish states that occupy similar positions but have different motion conditions.
+
+Planning begins from the vehicle\'s current estimated state, which must be associated with the lattice. If the current state does not exactly coincide with a predefined node, temporary connections can link it to reachable lattice states. The planner then expands feasible transitions toward candidate goal states while rejecting edges that violate geometric, kinematic, dynamic, environmental, or safety constraints.
+
+Graph-search algorithms can be used to explore the lattice efficiently. Each transition carries a cost representing factors such as distance, travel time, curvature, steering effort, acceleration, jerk, deviation from the reference route, or energy consumption. A heuristic can estimate the remaining cost to the goal, helping the search prioritize promising regions of the lattice rather than expanding every reachable state uniformly.
+
+Obstacle information is integrated by checking motion primitives rather than only their endpoints. A transition is valid only when the complete swept vehicle footprint remains collision-free along the primitive. This is especially important for large vehicles and AMRs because a collision can occur between lattice nodes even when both endpoints are free. Vehicle dimensions and orientation must therefore be represented during collision evaluation.
+
+Dynamic obstacles add a temporal dimension to lattice planning. When nodes or primitives contain time information, candidate motions can be compared with predicted positions of pedestrians, vehicles, or other robots. A spatial transition that is blocked at one time may become available later, while an initially clear region may become occupied. Time-aware lattices can therefore represent slowing, waiting, accelerating, or selecting an alternative route around moving objects.
+
+Drivable-area constraints further restrict the search space. Nodes outside road boundaries, traversable surfaces, permitted lanes, or operational corridors can be removed before search, while primitives crossing prohibited regions are rejected. For outdoor AMRs, traversability maps may additionally encode slopes, rough surfaces, curbs, soft ground, narrow passages, or other terrain characteristics that influence whether a motion should be considered feasible.
+
+Kinematic feasibility can be embedded directly in the primitive construction process. For Ackermann-steered platforms, curvature and steering-angle limits constrain transitions, while differential-drive or skid-steer AMRs require different primitive sets. When higher-speed operation is considered, dynamic constraints such as lateral acceleration, braking distance, tire-ground interaction, and stability may become necessary in addition to purely geometric feasibility.
+
+The cost function determines which feasible lattice solution is preferred. Route progress can reward forward motion, reference deviation can encourage route following, and obstacle-clearance terms can provide additional safety margin. Curvature, steering changes, acceleration, and jerk can represent smoothness and comfort, while time and energy terms can express operational efficiency. These objectives are combined without allowing soft costs to override mandatory safety constraints.
+
+The result of graph search is generally a sequence of lattice nodes connected by motion primitives. Although this sequence may already be executable, additional smoothing or local optimization can improve continuity and controller compatibility. The planner can refine primitive boundaries, reduce unnecessary steering variation, or fit a continuous trajectory while preserving collision-free geometry and the essential structure of the selected lattice solution.
+
+Lattice planning is particularly useful when multiple maneuver alternatives must be represented explicitly. At a blocked route segment, the graph can simultaneously contain trajectories that remain near the reference path, shift laterally, slow down, stop, or pass through another available corridor. Search then compares these alternatives systematically instead of relying on a single locally optimized trajectory that may converge to an undesirable solution.
+
+The structured search space also improves interpretability. Each selected motion can be traced through discrete states and known primitives, making it easier to inspect why the planner chose a particular maneuver. This property is useful during simulation, debugging, safety validation, and field testing because engineers can analyze rejected transitions, collision conditions, constraint violations, and accumulated costs along the selected trajectory.
+
+Real-time operation normally uses lattice planning within a receding-horizon architecture. The planner searches only a finite region ahead of the vehicle, executes an initial portion of the selected trajectory, and repeats the process after localization, perception, and prediction are updated. Reusing previous search information or maintaining consistency with the preceding solution can reduce computation and prevent unnecessary oscillation between similar lattice branches.
+
+For outdoor AMRs in campuses, industrial yards, ports, warehouses, and service-road networks, structured lattices can exploit known route geometry while retaining local maneuver flexibility. Vehicle dimensions, payload state, terrain limits, and operational speed can be incorporated into the primitive set and feasibility rules. This makes the approach suitable for platforms that require more realistic motion constraints than simple two-dimensional grid navigation provides.
+
+The primary limitation is the growth of the state space as additional dimensions are introduced. Adding heading, velocity, time, articulation, or other variables can multiply the number of nodes and transitions dramatically. Efficient implementations therefore require careful discretization, pruning, heuristics, hierarchical planning, primitive reuse, and bounded search horizons to preserve real-time performance without removing important maneuver alternatives.
+
+A lattice planner for structured environments is therefore best viewed as a constrained trajectory-search framework built around physically meaningful discrete states and transitions. By combining reference-route structure, motion primitives, vehicle constraints, collision checking, cost-based graph search, dynamic replanning, and optional trajectory refinement, it provides a practical method for generating executable motion for autonomous vehicles and outdoor AMRs.
+
+격자 계획기(Lattice Planner)는 연속적인 공간에서 임의의 점들을 탐색하는 대신, 동역학적으로 의미 있는 운동 대안(Motion Alternative)의 구조화된 집합을 탐색하여 궤적을 생성한다. 이 방식은 도로, 차선, 통로, 교차로 또는 사전에 정의된 경로와 같이 강한 기하학적 구조를 갖는 환경에서 특히 효과적이다. 자율주행차와 야외 자율이동로봇(Outdoor AMR)에서 격자(Lattice)는 경로 수준 계획(Route-Level Planning)과 물리적으로 실행 가능한 국부 운동(Local Motion) 사이를 연결하는 계산적 가교 역할을 한다.
+
+기본적인 개념은 차량 상태 공간(Vehicle State Space)에서 선택된 차원을 이산화(Discretization)하여 일련의 노드(Node)와 실행 가능한 전이(Feasible Transition)를 구성하는 것이다. 하나의 노드는 종방향 위치(Longitudinal Position), 횡방향 오프셋(Lateral Offset), 방향각(Heading), 속도(Velocity) 또는 이러한 값들의 조합을 나타낼 수 있다. 노드 사이의 연결은 차량이 실제로 실행할 수 있는 운동을 나타내며, 이를 통해 탐색 그래프(Search Graph)는 플랫폼을 크기가 없는 점으로 취급하지 않고 차량의 운동 제약조건을 표현할 수 있다.
+
+이러한 차이는 격자 계획(Lattice Planning)과 일반적인 점유 격자 경로 탐색(Occupancy-Grid Path Search)을 구분한다. 격자 계획기는 인접 셀을 단순한 기하학적 전이로 연결할 수 있는 반면, 상태 격자(State Lattice)는 방향각, 곡률(Curvature), 조향(Steering) 동작 및 차량 운동학(Vehicle Kinematics)을 엣지(Edge)에 직접 포함할 수 있다. 결과적으로 격자에서 탐색된 궤적은 최소 회전반경, 조향 한계, 진행 방향 제약 및 기타 플랫폼별 요구사항을 만족할 가능성이 더 높다.
+
+구조화된 환경(Structured Environment)은 격자를 구성하기 위한 자연스러운 좌표계를 제공한다. 기준 경로(Reference Path), 차선 중심선(Lane Centerline), 도로 경계(Road Boundary), 창고 통로 또는 물류 경로가 종방향을 정의할 수 있으며, 후보 노드는 허용 가능한 횡방향 위치에 분포된다. 연속적인 종방향 위치 구간이 가능한 차량 상태의 여러 계층(Layer)을 형성함으로써, 의도된 경로와 관련성을 유지하면서 환경을 통과할 수 있는 다양한 방법을 표현하는 그래프를 구성할 수 있다.
+
+격자의 해상도(Resolution)는 탐색 공간의 밀도를 결정한다. 종방향, 횡방향, 방향각 또는 속도의 세밀한 해상도는 이용 가능한 기동(Maneuver)의 수를 증가시키고 궤적 품질을 향상시킬 수 있지만, 메모리 사용량과 탐색 복잡도도 증가시킨다. 반대로 거친 이산화는 계산 비용을 줄이지만 유용한 해를 제거할 수 있다. 따라서 실제 설계에서는 해상도와 차량 크기, 기동성, 환경 복잡도 및 실시간 계획 요구사항 사이의 균형을 맞춰야 한다.
+
+모션 프리미티브(Motion Primitive)는 격자의 엣지를 구성하며 물리적인 의미를 부여하는 핵심 요소이다. 하나의 프리미티브는 하나의 이산 상태에서 다른 상태로 이동하는 실행 가능한 전이를 나타내며, 직선 주행, 점진적인 조향, 차선 이동, 회전, 가속, 감속 또는 정지를 표현할 수 있다. 이러한 운동은 다항식(Polynomial)이나 스플라인(Spline)을 이용하여 해석적으로 생성하거나, 차량 모델(Vehicle Model)로부터 적분하거나, 오프라인에서 미리 계산하여 재사용 가능한 프리미티브 라이브러리(Primitive Library)에 저장할 수 있다.
+
+사전에 계산된 모션 프리미티브(Precomputed Motion Primitive)는 계산량이 큰 궤적 생성을 배포 전에 수행할 수 있기 때문에 온라인 계산량을 크게 줄일 수 있다. 프리미티브의 종단점(Endpoint)은 이산화된 상태 격자와 일치하도록 선택되며, 필요한 경우 동일한 운동 패턴을 이동시키거나 회전시켜 사용할 수 있다. 일정한 운동학적 특성을 갖는 차량의 경우 이러한 방식은 운용 중 빠르게 탐색할 수 있는 검증된 전이(Verified Transition)의 간결한 라이브러리를 구성한다.
+
+반대로 국부적인 환경 조건에서 더 높은 유연성이 필요한 경우 모션 프리미티브를 온라인에서 생성할 수도 있다. 계획기는 다항식 궤적 생성(Polynomial Trajectory Generation), 프레네 좌표계(Frenet-Frame) 방식 또는 수치 적분(Numerical Integration)을 이용하여 샘플링된 종단 상태를 연결할 수 있다. 온라인 생성은 속도, 페이로드(Payload), 지형 및 기동 목표의 변화에 대응할 수 있지만 추가적인 계산이 필요하다. 하이브리드 구현에서는 재사용 가능한 프리미티브 라이브러리와 국부 최적화 궤적(Local Optimized Trajectory)을 결합하여 사전에 정의된 운동만으로 충분하지 않은 상황에 대응할 수 있다.
+
+격자는 직교 좌표계(Cartesian Coordinates), 도로 상대 좌표계(Road-Relative Coordinates) 또는 여러 상태 변수의 조합으로 구성할 수 있다. 구조화된 경로 추종(Structured Route Following)에서는 프레네 방식의 종방향 및 횡방향 좌표가 특히 편리하다. 노드를 기준 경로를 따른 진행 거리와 기준 경로로부터의 오프셋에 따라 샘플링할 수 있기 때문이다. 계획기가 동일한 위치를 차지하지만 서로 다른 운동 상태를 갖는 차량을 구분해야 하는 경우 방향각과 속도 차원을 추가할 수 있다.
+
+계획은 차량의 현재 추정 상태(Current Estimated State)에서 시작하며, 이 상태를 격자와 연결해야 한다. 현재 상태가 사전에 정의된 노드와 정확히 일치하지 않는 경우 도달 가능한 격자 상태(Reachable Lattice State)와 임시 연결을 구성할 수 있다. 이후 계획기는 실행 가능한 전이를 목표 후보 상태(Candidate Goal State)를 향해 확장하면서 기하학적, 운동학적, 동역학적, 환경적 또는 안전 제약조건을 위반하는 엣지를 제거한다.
+
+그래프 탐색 알고리즘(Graph-Search Algorithm)은 격자를 효율적으로 탐색하는 데 사용될 수 있다. 각각의 전이는 거리, 이동 시간, 곡률, 조향 노력(Steering Effort), 가속도, 저크(Jerk), 기준 경로로부터의 편차 또는 에너지 소비와 같은 요소를 나타내는 비용(Cost)을 갖는다. 휴리스틱(Heuristic)은 목표까지 남은 비용을 추정하여 모든 도달 가능한 상태를 동일하게 확장하는 대신 유망한 격자 영역을 우선적으로 탐색하도록 할 수 있다.
+
+장애물 정보(Obstacle Information)는 단순히 노드의 종단점만 검사하는 것이 아니라 모션 프리미티브 자체를 검사하는 방식으로 통합된다. 하나의 전이는 전체 프리미티브를 따라 차량이 차지하는 영역(Swept Vehicle Footprint)이 충돌 없이 유지될 때만 유효하다. 이는 대형 차량과 AMR에서 특히 중요하다. 두 종단점이 모두 자유 공간에 있더라도 노드 사이에서 충돌이 발생할 수 있기 때문이다. 따라서 충돌 평가에서는 차량의 크기와 방향을 함께 표현해야 한다.
+
+동적 장애물(Dynamic Obstacle)은 격자 계획에 시간 차원을 추가한다. 노드 또는 프리미티브가 시간 정보를 포함하면 후보 운동을 보행자, 차량 또는 다른 로봇의 예측 위치와 비교할 수 있다. 특정 시간에는 차단된 전이가 이후에는 가능해질 수 있으며, 처음에는 비어 있던 영역이 나중에는 점유될 수도 있다. 따라서 시간 인식 격자(Time-Aware Lattice)는 감속, 대기, 가속 또는 이동 중인 객체를 우회하는 다른 경로를 선택하는 행동을 표현할 수 있다.
+
+주행 가능 영역 제약조건(Drivable-Area Constraint)은 탐색 공간을 더욱 제한한다. 도로 경계, 주행 가능한 표면, 허용된 차선 또는 운용 통로 밖에 존재하는 노드는 탐색 전에 제거할 수 있으며, 금지 영역을 통과하는 프리미티브는 거부된다. 야외 자율이동로봇에서는 주행 가능성 지도(Traversability Map)에 경사, 거친 노면, 연석, 연약 지반, 좁은 통로 또는 운동 실행 가능성에 영향을 주는 기타 지형 특성을 추가로 표현할 수 있다.
+
+운동학적 실행 가능성(Kinematic Feasibility)은 프리미티브 생성 과정에 직접 포함할 수 있다. 아커만 조향(Ackermann Steering) 플랫폼에서는 곡률과 조향각 한계가 전이를 제한하며, 차동 구동(Differential Drive) 또는 스키드 스티어(Skid-Steer) AMR에서는 서로 다른 프리미티브 집합이 필요하다. 고속 운용을 고려할 경우 횡가속도, 제동거리, 타이어와 지면의 상호작용 및 안정성과 같은 동역학적 제약조건이 순수한 기하학적 실행 가능성에 추가로 필요할 수 있다.
+
+비용함수(Cost Function)는 실행 가능한 격자 해 중 어떤 것을 선택할지를 결정한다. 경로 진행은 전진 운동에 보상을 제공할 수 있고, 기준 경로 편차는 경로 추종을 유도하며, 장애물과의 거리 항목은 추가적인 안전 여유(Safety Margin)를 제공할 수 있다. 곡률, 조향 변화, 가속도 및 저크는 부드러움과 승차감을 표현할 수 있고, 시간과 에너지 항목은 운용 효율성을 표현할 수 있다. 이러한 목표들은 필수적인 안전 제약조건을 소프트 비용이 무시하지 않도록 구성해야 한다.
+
+그래프 탐색의 결과는 일반적으로 모션 프리미티브로 연결된 일련의 격자 노드가 된다. 이러한 결과는 이미 실행 가능한 상태일 수 있지만, 추가적인 평활화(Smoothing) 또는 국부 최적화(Local Optimization)를 통해 연속성과 제어기 호환성을 향상시킬 수 있다. 계획기는 선택된 격자 해의 충돌 없는 기하학과 핵심적인 구조를 유지하면서 프리미티브 경계를 정제하고 불필요한 조향 변화를 줄이거나 연속적인 궤적을 피팅(Fitting)할 수 있다.
+
+격자 계획은 여러 기동 대안을 명시적으로 표현해야 하는 경우 특히 유용하다. 경로의 일부가 막힌 경우 그래프는 기준 경로 주변을 유지하는 궤적, 횡방향 이동, 감속, 정지 또는 다른 이용 가능한 통로를 통과하는 궤적을 동시에 포함할 수 있다. 그러면 탐색 알고리즘은 이러한 대안을 체계적으로 비교할 수 있으며, 바람직하지 않은 해로 수렴할 수 있는 하나의 국부 최적 궤적에 의존하지 않아도 된다.
+
+구조화된 탐색 공간은 해석 가능성(Interpretability)도 향상시킨다. 선택된 각 운동은 이산 상태와 알려진 프리미티브를 따라 추적할 수 있으므로 계획기가 특정 기동을 선택한 이유를 분석하기 쉽다. 이는 시뮬레이션, 디버깅, 안전 검증 및 현장 시험에서 유용하다. 엔지니어는 거부된 전이, 충돌 조건, 제약조건 위반 및 선택된 궤적에 누적된 비용을 분석할 수 있다.
+
+실시간 운용에서는 일반적으로 격자 계획을 이동 지평선 구조(Receding-Horizon Architecture) 안에서 사용한다. 계획기는 차량 전방의 유한한 영역만 탐색하고 선택된 궤적의 초기 부분을 실행한 후 위치추정, 인지 및 예측 정보가 갱신되면 이 과정을 반복한다. 이전 탐색 정보를 재사용하거나 이전 해와의 일관성을 유지하면 계산량을 줄이고 유사한 격자 분기 사이에서 불필요한 진동이 발생하는 것을 방지할 수 있다.
+
+캠퍼스, 산업단지 야드, 항만, 창고 및 서비스 도로 네트워크에서 운용되는 야외 자율이동로봇에서는 구조화된 격자가 알려진 경로 기하학을 활용하면서도 국부적인 기동 유연성을 유지할 수 있다. 차량 크기, 페이로드 상태, 지형 한계 및 운용 속도를 프리미티브 집합과 실행 가능성 규칙에 포함할 수 있다. 이를 통해 단순한 2차원 격자 내비게이션보다 현실적인 운동 제약조건이 필요한 플랫폼에 적합한 계획 방식이 된다.
+
+주요 한계는 추가적인 차원이 도입될수록 상태 공간이 증가한다는 것이다. 방향각, 속도, 시간, 관절 상태 또는 기타 변수를 추가하면 노드와 전이의 수가 급격하게 증가할 수 있다. 따라서 실시간 성능을 유지하면서 중요한 기동 대안을 제거하지 않기 위해 효율적인 이산화, 가지치기(Pruning), 휴리스틱, 계층적 계획(Hierarchical Planning), 프리미티브 재사용 및 제한된 탐색 지평선이 필요하다.
+
+구조화된 환경을 위한 격자 계획기(Lattice Planner)는 물리적으로 의미 있는 이산 상태와 전이를 중심으로 구성된 제약 기반 궤적 탐색 프레임워크(Constrained Trajectory-Search Framework)로 이해하는 것이 적절하다. 기준 경로 구조, 모션 프리미티브, 차량 제약조건, 충돌 검사, 비용 기반 그래프 탐색, 동적 재계획 및 선택적 궤적 정제를 결합함으로써 자율주행차와 야외 자율이동로봇을 위한 실행 가능한 운동을 생성하는 실용적인 방법을 제공한다.
+
+##  
+
+## 07.05. Model Predictive Path Integral MPPI [w/Code]
+
+![](images/image5.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+Model Predictive Path Integral (MPPI) is a sampling-based trajectory optimization method that generates control sequences by repeatedly evaluating many possible future actions over a finite prediction horizon. Instead of explicitly calculating gradients of a complex vehicle or robot model, MPPI samples control perturbations, propagates the resulting trajectories, evaluates their costs, and updates the control sequence toward lower-cost behavior. This makes it useful for nonlinear, constrained, and highly dynamic motion-planning problems.
+
+MPPI belongs to the broader family of Model Predictive Control (MPC), but its optimization mechanism is based on stochastic sampling and path-integral principles. At each planning cycle, the controller maintains a nominal sequence of future control commands such as steering and acceleration. Around this nominal sequence, many perturbed control sequences are generated. Each sequence is evaluated through the vehicle model, producing a distribution of possible future motions over the prediction horizon.
+
+The system begins with the current estimated state of the vehicle or robot. This state may include position, heading, velocity, acceleration, and other variables required by the motion model. A nominal control sequence is then extended into the future for a finite horizon. Random control perturbations are added to this sequence, producing many alternative actions. Each alternative is propagated forward through the dynamics model to predict the resulting state trajectory.
+
+The quality of every sampled trajectory is measured using a cost function. The cost can include tracking error, obstacle proximity, collision risk, control effort, velocity error, acceleration, jerk, curvature, route deviation, and terminal-state error. For outdoor AMRs, additional terms can represent terrain traversability, slope, payload stability, wheel slip, energy consumption, or operational constraints. The cost function therefore connects the mathematical optimization process with the physical objectives of the robot.
+
+A key characteristic of MPPI is that the complete trajectory is evaluated rather than only the immediate control action. A sampled control sequence may initially appear attractive but eventually lead to an undesirable state, while another sequence may temporarily increase tracking error but produce a safer and more efficient long-term motion. The prediction horizon allows MPPI to evaluate these future consequences and select control behavior based on accumulated trajectory cost.
+
+The path-integral formulation converts the sampled trajectory costs into weights that determine how strongly each candidate influences the updated control sequence. Lower-cost samples receive greater influence, while high-cost samples contribute less. The nominal control sequence is consequently shifted toward control perturbations associated with better predicted outcomes. This weighted update can be repeated over successive planning cycles without requiring a conventional gradient calculation through the complete nonlinear planning problem.
+
+The sampling distribution is an important part of MPPI performance. If the perturbations are too small, the optimizer explores only a narrow neighborhood around the current solution and may fail to discover better maneuvers. If they are too large, the sampled trajectories become inefficient and many candidates may violate constraints. The distribution and magnitude of control noise therefore need to reflect the vehicle\'s actuation range, operating speed, environment, and computational budget.
+
+MPPI can naturally handle nonlinear vehicle dynamics because trajectory propagation is performed through the chosen model rather than through a linearized approximation alone. The model may represent nonlinear relationships between steering, velocity, acceleration, curvature, and vehicle state. This is particularly valuable when operating conditions depart significantly from simple kinematic assumptions, although the usefulness of the result still depends on the accuracy and computational efficiency of the underlying model.
+
+Constraints can be incorporated through trajectory rejection, cost penalties, control bounds, state limits, or combinations of these mechanisms. Collision with an obstacle, excessive curvature, unacceptable acceleration, or violation of the vehicle\'s steering range can cause a sampled trajectory to be rejected or assigned a very high cost. Hard safety requirements should remain distinguishable from soft optimization objectives so that improved comfort or progress cannot compensate for a fundamental safety violation.
+
+MPPI is well suited to dynamic environments because the optimization is repeated as new information becomes available. Perception and prediction modules update obstacle states, localization provides a new vehicle state, and the planner performs another sampling-and-evaluation cycle. The system therefore operates as a receding-horizon optimizer: only the beginning of the optimized control sequence is executed, after which the horizon is shifted forward and the remaining solution is updated using the latest state and environmental information.
+
+Warm starting can improve both efficiency and temporal consistency. The previously optimized control sequence can be shifted forward and used as the nominal sequence for the next cycle. The newly available terminal portion can be initialized with an appropriate default control. This avoids starting every optimization cycle from an unrelated control sequence and helps maintain smoother behavior while reducing the amount of exploration required to recover a useful solution.
+
+Compared with a lattice planner, MPPI does not require the motion alternatives to be explicitly represented as a discrete set of predefined branches. Sampling can explore a continuous range of control sequences within the limits of the model and sampling distribution. Compared with a polynomial trajectory optimizer, MPPI can directly optimize control sequences while considering nonlinear state evolution. Its flexibility comes at the cost of substantial trajectory-rollout computation because many candidate sequences must be simulated at every planning cycle.
+
+The computational workload is therefore one of the central engineering considerations. If N control samples are evaluated over a horizon containing H time steps, the system must perform a large number of model evaluations during each optimization cycle. GPU parallelization can be particularly effective because many sampled trajectories can be propagated independently. For real-time autonomous systems, the number of samples, horizon length, model complexity, update frequency, and available accelerator resources must be selected together.
+
+MPPI is especially useful when the motion problem contains nonlinear interactions that are difficult to capture with simple local optimization. For an outdoor AMR, the optimizer can consider steering and acceleration together while evaluating obstacle clearance, route tracking, curvature, terrain conditions, and motion smoothness. The resulting control sequence can respond to local changes without requiring the planner to enumerate every possible maneuver explicitly.
+
+The relationship between MPPI and trajectory generation is therefore somewhat different from the relationship between polynomial or lattice methods and trajectory generation. Polynomial methods construct trajectories from analytical functions, and lattice methods search structured combinations of states and motion primitives. MPPI searches in control-sequence space and obtains trajectories by propagating those controls through a model. The resulting state trajectories are therefore consequences of the sampled controls rather than independently specified geometric curves.
+
+A practical MPPI architecture normally combines a reference trajectory with a dynamic model and an environmental cost representation. The reference trajectory supplies desired motion, while the model predicts how candidate controls affect the vehicle. Obstacles and terrain contribute additional costs or constraints, and the sampling process searches for control sequences that produce acceptable future states. The optimizer consequently acts as a bridge between high-level motion objectives and physically executable control.
+
+The choice of prediction horizon is another important design parameter. A short horizon reduces computation and allows rapid updates but may fail to anticipate a future obstacle or sharp maneuver. A longer horizon provides greater foresight but increases sampling cost and may rely on increasingly uncertain predictions. The appropriate horizon therefore depends on vehicle speed, stopping distance, environment structure, control frequency, and the quality of available prediction information.
+
+MPPI can also incorporate smoothness directly into its objective. Penalties on acceleration, steering variation, control effort, or jerk discourage unnecessarily aggressive control sequences. For heavy outdoor AMRs, smooth control can reduce payload disturbance, suspension excitation, wheel slip, and mechanical stress. However, smoothness remains an optimization objective rather than a substitute for physical feasibility, and the system must still enforce limits on acceleration, steering, speed, curvature, and stability.
+
+Dynamic obstacle handling requires the cost evaluation to be time-aware. A sampled trajectory should be compared with predicted obstacle states at corresponding future timestamps rather than simply checking whether the geometric path intersects an obstacle\'s current position. This allows MPPI to consider behaviors such as slowing down, accelerating before an obstacle reaches the path, changing lateral position, or temporarily stopping when these actions provide lower-cost feasible outcomes.
+
+The resulting MPPI solution is normally passed to a low-level tracking or vehicle-control interface as a time-indexed reference or control sequence. Depending on the architecture, MPPI itself may operate as a high-level local controller, or it may generate a trajectory that is subsequently tracked by another controller. The interface should preserve consistent state definitions, timestamps, coordinate frames, and actuator conventions so that the optimized motion remains meaningful when executed by the physical platform.
+
+MPPI also provides a useful mechanism for combining multiple objectives without constructing an enormous discrete maneuver library. Tracking, progress, obstacle clearance, smoothness, energy, and terminal-state objectives can all contribute to the sampled trajectory cost. Nevertheless, cost design remains critical because the numerical relationship between these terms determines the behavior of the optimizer. Safety constraints should therefore be explicitly separated from objectives that merely express preference.
+
+For autonomous driving and outdoor AMR applications, MPPI is best understood as a model-based stochastic trajectory optimizer operating continuously over a finite horizon. It samples future control sequences, propagates them through a motion model, evaluates their accumulated costs and constraints, updates the nominal solution using cost-dependent weighting, executes the beginning of the optimized sequence, and repeats the process using updated state and environment information. This combination provides a flexible approach to real-time nonlinear motion generation.
+
+모델 예측 경로 적분(Model Predictive Path Integral, MPPI)은 유한한 예측 구간(Finite Prediction Horizon)에서 다양한 미래 행동을 반복적으로 평가하여 제어 시퀀스를 생성하는 샘플링 기반 궤적 최적화(Sampling-Based Trajectory Optimization) 방법이다. 복잡한 차량 또는 로봇 모델의 그래디언트(Gradient)를 직접 계산하는 대신, MPPI는 제어 섭동(Control Perturbation)을 샘플링하고 그 결과로 생성된 궤적을 전파하며 비용을 평가한 다음 더 낮은 비용의 운동 방향으로 제어 시퀀스를 갱신한다. 이러한 특성은 비선형(Nonlinear), 제약이 있는(Constrained), 동적인 운동 계획 문제에 유용하다.
+
+MPPI는 모델 예측 제어(Model Predictive Control, MPC)의 광범위한 계열에 속하지만, 최적화 방식은 확률적 샘플링(Stochastic Sampling)과 경로 적분(Path Integral) 원리에 기반한다. 각 계획 주기(Planning Cycle)에서 제어기는 조향(Steering)과 가속도(Acceleration)와 같은 미래 제어 명령의 명목 시퀀스(Nominal Control Sequence)를 유지한다. 이 명목 시퀀스 주변에서 많은 섭동된 제어 시퀀스를 생성하고, 각각의 시퀀스를 차량 모델을 통해 전파하여 예측 구간 동안 가능한 미래 운동의 분포를 구성한다.
+
+시스템은 차량 또는 로봇의 현재 추정 상태(Current Estimated State)에서 시작한다. 이 상태에는 위치(Position), 방향각(Heading), 속도(Velocity), 가속도(Acceleration) 및 운동 모델(Motion Model)에 필요한 기타 변수가 포함될 수 있다. 이후 명목 제어 시퀀스를 유한한 예측 구간에 걸쳐 미래로 확장한다. 이 시퀀스에 무작위 제어 섭동(Random Control Perturbation)을 추가하여 다양한 대안적 행동을 생성한다. 각각의 대안은 동역학 모델(Dynamics Model)을 통해 미래로 전파되어 그 결과로 예상되는 상태 궤적을 생성한다.
+
+모든 샘플링된 궤적의 품질은 비용함수(Cost Function)를 이용하여 측정한다. 비용에는 추종 오차(Tracking Error), 장애물 근접성(Obstacle Proximity), 충돌 위험(Collision Risk), 제어 노력(Control Effort), 속도 오차, 가속도, 저크(Jerk), 곡률(Curvature), 경로 편차(Route Deviation), 종단 상태 오차(Terminal-State Error) 등이 포함될 수 있다. 야외 자율이동로봇(Outdoor AMR)의 경우 지형 주행 가능성(Terrain Traversability), 경사, 페이로드 안정성(Payload Stability), 휠 슬립(Wheel Slip), 에너지 소비 또는 운용 제약조건을 추가적인 항목으로 표현할 수 있다. 따라서 비용함수는 수학적 최적화 과정과 로봇의 물리적 목표를 연결한다.
+
+MPPI의 핵심적인 특징은 즉각적인 제어 행동 하나만 평가하는 것이 아니라 전체 미래 궤적을 평가한다는 것이다. 하나의 샘플링된 제어 시퀀스는 처음에는 매력적으로 보일 수 있지만 최종적으로 바람직하지 않은 상태에 도달할 수 있으며, 다른 시퀀스는 일시적으로 추종 오차를 증가시키더라도 장기적으로 더 안전하고 효율적인 운동을 만들 수 있다. 예측 구간을 사용하면 MPPI가 이러한 미래 결과를 평가하고 누적 궤적 비용(Accumulated Trajectory Cost)을 기반으로 제어 행동을 선택할 수 있다.
+
+경로 적분 공식화(Path-Integral Formulation)는 샘플링된 궤적의 비용을 후보 궤적이 갱신된 제어 시퀀스에 얼마나 강하게 영향을 미칠지를 결정하는 가중치(Weight)로 변환한다. 비용이 낮은 샘플은 더 큰 영향을 받고, 비용이 높은 샘플은 더 작은 영향을 미친다. 결과적으로 명목 제어 시퀀스는 더 나은 예측 결과와 연관된 제어 섭동 방향으로 이동한다. 이러한 가중 업데이트는 전체 비선형 계획 문제에 대한 전통적인 그래디언트 계산 없이도 연속적인 계획 주기에서 반복될 수 있다.
+
+샘플링 분포(Sampling Distribution)는 MPPI 성능의 중요한 요소이다. 섭동이 너무 작으면 현재 해 주변의 매우 좁은 영역만 탐색하게 되어 더 나은 기동을 발견하지 못할 수 있다. 반대로 섭동이 너무 크면 샘플링된 궤적의 효율성이 낮아지고 많은 후보가 제약조건을 위반할 수 있다. 따라서 제어 노이즈(Control Noise)의 분포와 크기는 차량의 액추에이터 범위, 운용 속도, 환경 및 계산 자원을 반영하도록 설정해야 한다.
+
+MPPI는 선택된 운동 모델을 통해 궤적 전파를 수행하기 때문에 비선형 차량 동역학(Nonlinear Vehicle Dynamics)을 자연스럽게 처리할 수 있다. 모델은 조향, 속도, 가속도, 곡률 및 차량 상태 사이의 비선형 관계를 표현할 수 있다. 이러한 특성은 단순한 운동학적 가정(Kinematic Assumption)에서 크게 벗어나는 운용 조건에서 특히 유용하다. 다만 결과의 유용성은 여전히 사용되는 운동 모델의 정확성과 계산 효율성에 의존한다.
+
+제약조건(Constraint)은 궤적 제거(Trajectory Rejection), 비용 페널티(Cost Penalty), 제어 입력 제한(Control Bound), 상태 제한(State Limit) 또는 이러한 방법의 조합을 통해 반영할 수 있다. 장애물과의 충돌, 과도한 곡률, 허용되지 않는 가속도 또는 차량 조향 범위 위반은 샘플링된 궤적을 제거하거나 매우 높은 비용을 부여하는 원인이 될 수 있다. 안전과 관련된 하드 요구사항(Hard Safety Requirement)은 소프트 최적화 목표(Soft Optimization Objective)와 구분하여 처리해야 하며, 향상된 승차감이나 진행성이 근본적인 안전 제약조건을 상쇄하지 못하도록 해야 한다.
+
+MPPI는 새로운 정보가 입력될 때마다 최적화를 반복하기 때문에 동적 환경(Dynamic Environment)에 적합하다. 인지(Perception) 및 예측(Prediction) 모듈은 장애물 상태를 갱신하고, 위치추정(Localization)은 새로운 차량 상태를 제공하며, 계획기는 다시 샘플링 및 평가 과정을 수행한다. 따라서 시스템은 이동 지평선 최적화기(Receding-Horizon Optimizer)로 동작한다. 최적화된 제어 시퀀스의 시작 부분만 실행하고, 이후 예측 구간을 앞으로 이동시키면서 최신 상태와 환경 정보를 이용하여 나머지 해를 갱신한다.
+
+웜 스타트(Warm Start)는 계산 효율성과 시간적 일관성(Temporal Consistency)을 모두 향상시킬 수 있다. 이전에 최적화된 제어 시퀀스를 앞으로 한 단계 이동시킨 뒤 다음 주기의 명목 시퀀스로 사용할 수 있다. 새롭게 추가된 미래 구간은 적절한 기본 제어값(Default Control)으로 초기화할 수 있다. 이를 통해 모든 최적화 주기를 관련 없는 제어 시퀀스에서 시작하는 것을 방지하고, 유용한 해를 다시 탐색하는 데 필요한 탐색량을 줄이면서 더 부드러운 운동을 유지할 수 있다.
+
+격자 계획기(Lattice Planner)와 비교하면 MPPI는 운동 대안을 명시적인 이산 분기(Discrete Branch) 집합으로 표현할 필요가 없다. 샘플링은 운동 모델과 샘플링 분포의 범위 안에서 연속적인 제어 시퀀스를 탐색할 수 있다. 다항식 궤적 최적화(Polynomial Trajectory Optimization)와 비교하면 MPPI는 비선형 상태 변화를 고려하면서 제어 시퀀스 자체를 직접 최적화할 수 있다. 그러나 이러한 유연성은 각 계획 주기마다 많은 후보 시퀀스를 시뮬레이션해야 하므로 상당한 궤적 전파 계산량을 요구한다.
+
+따라서 계산 부하(Computational Workload)는 핵심적인 엔지니어링 고려사항 중 하나이다. N개의 제어 샘플을 예측 구간 내 H개의 시간 단계(Time Step)에 대해 평가한다면 각 최적화 주기마다 많은 수의 모델 평가를 수행해야 한다. GPU 병렬화(GPU Parallelization)는 많은 샘플링된 궤적을 독립적으로 전파할 수 있기 때문에 특히 효과적일 수 있다. 실시간 자율 시스템에서는 샘플 수, 예측 구간 길이, 모델 복잡도, 갱신 주기 및 사용 가능한 가속기 자원을 함께 결정해야 한다.
+
+MPPI는 단순한 국부 최적화(Local Optimization)로 표현하기 어려운 비선형 상호작용(Nonlinear Interaction)을 포함하는 운동 문제에서 특히 유용하다. 야외 자율이동로봇의 경우 최적화기는 조향과 가속도를 동시에 고려하면서 장애물과의 거리, 경로 추종, 곡률, 지형 조건 및 운동의 부드러움을 평가할 수 있다. 그 결과 생성되는 제어 시퀀스는 모든 가능한 기동을 명시적으로 열거하지 않고도 국부적인 환경 변화에 대응할 수 있다.
+
+MPPI와 궤적 생성(Trajectory Generation)의 관계는 다항식 방식이나 격자 방식과는 다소 다르다. 다항식 방식은 해석적인 함수를 이용하여 궤적을 구성하고, 격자 방식은 상태와 모션 프리미티브(Motion Primitive)의 구조화된 조합을 탐색한다. 반면 MPPI는 제어 시퀀스 공간(Control-Sequence Space)을 탐색하고 해당 제어를 운동 모델에 전파하여 궤적을 얻는다. 따라서 생성되는 상태 궤적은 독립적으로 지정된 기하학적 곡선이 아니라 샘플링된 제어 입력의 결과이다.
+
+실제 MPPI 아키텍처는 일반적으로 기준 궤적(Reference Trajectory), 동역학 모델(Dynamic Model) 및 환경 비용 표현(Environmental Cost Representation)을 결합한다. 기준 궤적은 원하는 운동을 제공하고, 모델은 후보 제어가 차량에 미치는 영향을 예측한다. 장애물과 지형은 추가적인 비용 또는 제약조건으로 반영되며, 샘플링 과정은 허용 가능한 미래 상태를 생성하는 제어 시퀀스를 탐색한다. 결과적으로 최적화기는 상위 수준의 운동 목표와 물리적으로 실행 가능한 제어 사이를 연결하는 역할을 한다.
+
+예측 구간(Prediction Horizon)의 선택 역시 중요한 설계 변수이다. 짧은 예측 구간은 계산량을 줄이고 빠른 갱신을 가능하게 하지만 미래의 장애물이나 급격한 기동을 충분히 예측하지 못할 수 있다. 긴 예측 구간은 더 많은 미래 정보를 제공하지만 샘플링 비용을 증가시키고 예측 불확실성도 커질 수 있다. 따라서 적절한 예측 구간은 차량 속도, 제동거리, 환경 구조, 제어 주기 및 이용 가능한 예측 정보의 품질에 따라 결정해야 한다.
+
+MPPI는 운동의 부드러움(Smoothness)을 목적함수에 직접 포함할 수도 있다. 가속도, 조향 변화, 제어 노력 또는 저크에 페널티를 부여하면 불필요하게 공격적인 제어 시퀀스를 억제할 수 있다. 무거운 야외 자율이동로봇에서는 부드러운 제어가 페이로드 흔들림, 서스펜션 가진(Suspension Excitation), 휠 슬립 및 기계적 응력을 줄이는 데 도움이 될 수 있다. 그러나 부드러움은 여전히 최적화 목표일 뿐 물리적 실행 가능성을 대신할 수 없으며, 가속도, 조향, 속도, 곡률 및 안정성에 대한 제한조건은 별도로 유지해야 한다.
+
+동적 장애물(Dynamic Obstacle)을 처리하려면 비용 평가가 시간 정보를 반영해야 한다. 샘플링된 궤적은 단순히 장애물의 현재 위치와 기하학적으로 교차하는지만 확인하는 것이 아니라 해당 미래 타임스탬프에서 예측된 장애물 상태와 비교해야 한다. 이를 통해 MPPI는 감속, 장애물이 경로에 도달하기 전에 가속, 횡방향 위치 변경 또는 일시적 정지와 같은 행동을 고려할 수 있으며, 이러한 행동 중 실행 가능한 동시에 더 낮은 비용을 갖는 결과를 선택할 수 있다.
+
+생성된 MPPI 해는 일반적으로 시간에 따라 인덱싱된 기준값(Time-Indexed Reference) 또는 제어 시퀀스로 하위 수준의 추종 제어기 또는 차량 제어 인터페이스(Vehicle-Control Interface)에 전달된다. 시스템 구조에 따라 MPPI 자체가 상위 수준의 국부 제어기(Local Controller)로 동작할 수도 있고, 이후 다른 제어기가 추종할 궤적을 생성할 수도 있다. 최적화된 운동이 실제 플랫폼에서 동일한 의미를 유지하려면 상태 정의, 타임스탬프, 좌표계 및 액추에이터 규약(Actuator Convention)을 일관되게 유지해야 한다.
+
+MPPI는 거대한 이산 기동 라이브러리를 구축하지 않고도 여러 목적을 결합할 수 있는 유용한 방법을 제공한다. 추종, 진행성, 장애물과의 거리, 부드러움, 에너지 및 종단 상태 목표를 모두 샘플링된 궤적 비용에 포함할 수 있다. 그러나 비용 설계(Cost Design)는 여전히 매우 중요하다. 각 비용 항목 사이의 수치적 관계가 최적화기의 행동을 결정하기 때문이다. 따라서 안전 제약조건은 단순히 선호도를 나타내는 최적화 목적과 명시적으로 분리하는 것이 바람직하다.
+
+자율주행과 야외 자율이동로봇 응용에서 MPPI는 유한한 예측 구간을 지속적으로 최적화하는 모델 기반 확률적 궤적 최적화기(Model-Based Stochastic Trajectory Optimizer)로 이해하는 것이 적절하다. 미래의 제어 시퀀스를 샘플링하고, 이를 운동 모델을 통해 전파하며, 누적 비용과 제약조건을 평가하고, 비용에 따른 가중치를 이용하여 명목 해를 갱신한 다음, 최적화된 시퀀스의 시작 부분을 실행하고, 갱신된 상태와 환경 정보를 이용하여 이 과정을 반복한다. 이러한 조합은 실시간 비선형 운동 생성을 위한 유연한 방법을 제공한다.
+
+##  
+
+## 07.06. Trajectory Comfort and Energy Optimization
+
+![](images/image6.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+Trajectory optimization should not be evaluated only by whether a vehicle reaches its geometric destination. A practical autonomous system must also consider how the motion is experienced and how much energy is consumed while executing it. Trajectory comfort and energy optimization therefore extend conventional path planning by introducing acceleration, jerk, steering variation, curvature, speed profile, payload stability, and power demand into the trajectory objective. The goal is to generate motion that remains safe and feasible while reducing unnecessary dynamic stress and energy consumption.
+
+Comfort is closely related to the derivatives of vehicle motion. Position defines where the vehicle moves, velocity describes how quickly it progresses, and acceleration determines the change in velocity. Jerk, defined as the rate of change of acceleration, becomes particularly important because abrupt acceleration changes can create noticeable vibration and mechanical loading even when the acceleration itself remains within an acceptable limit. A trajectory with continuous acceleration and bounded jerk generally provides smoother physical behavior than one with abrupt control transitions.
+
+For autonomous vehicles carrying passengers, comfort is often associated with longitudinal acceleration, lateral acceleration, jerk, and changes in steering behavior. For outdoor AMRs, the interpretation is broader because the transported payload may be sensitive equipment, inspection instruments, robotic manipulators, containers, or other heavy loads. Excessive acceleration can shift the payload, while rapid lateral motion can generate roll and yaw disturbances. Consequently, comfort optimization for AMRs should consider both vehicle motion quality and the dynamic response of the payload.
+
+Longitudinal comfort can be controlled through the shape of the velocity and acceleration profiles. A trajectory that immediately applies a large acceleration may reach its target speed quickly, but it can produce high mechanical loads and unnecessary disturbances. A smoother profile gradually increases acceleration and subsequently reduces it as the desired velocity is approached. S-curve motion profiles are particularly useful because they constrain jerk while maintaining controlled acceleration and deceleration. This approach can improve both motion quality and mechanical durability.
+
+Lateral comfort depends strongly on curvature, steering rate, lateral acceleration, and vehicle speed. Even when a geometric path is collision-free, entering a sharp curve at excessive speed can generate large lateral acceleration. A trajectory optimizer can therefore coordinate speed and curvature rather than treating them independently. When curvature increases, reducing speed can maintain lateral acceleration within an acceptable range. This coupling is important for high-speed autonomous vehicles and heavy outdoor AMRs operating on roads, ramps, and curved industrial routes.
+
+A useful comfort objective can combine several motion quantities into a weighted cost. Acceleration magnitude can represent dynamic intensity, jerk can represent abruptness, steering variation can represent directional smoothness, and lateral acceleration can represent cornering load. The objective may be expressed conceptually as a weighted sum of these terms over the trajectory horizon. The weights should reflect the vehicle architecture and mission rather than assuming that one universal comfort metric applies to every autonomous platform.
+
+Comfort optimization must not override safety or physical feasibility. A trajectory with very low jerk may require excessive distance to stop, while an extremely smooth steering profile may approach an obstacle too closely. Similarly, minimizing lateral acceleration may cause unnecessary route deviation. Safety distance, braking capability, steering limits, curvature limits, terrain constraints, and collision avoidance should therefore remain mandatory constraints, while comfort terms are optimized within the feasible solution space.
+
+Energy optimization introduces another dimension to trajectory generation. Vehicle energy consumption depends on mass, velocity, acceleration, rolling resistance, aerodynamic resistance, terrain slope, drivetrain efficiency, auxiliary loads, and braking behavior. The trajectory therefore affects energy consumption even when the geometric route remains unchanged. Two trajectories can follow exactly the same route but consume different amounts of energy because one repeatedly accelerates and decelerates while the other maintains a more stable velocity profile.
+
+Vehicle mass becomes particularly important for heavy AMRs. The kinetic energy associated with translational motion increases with the square of velocity, while the force required for acceleration increases with vehicle mass. Consequently, unnecessary speed increases and repeated acceleration events can produce significant energy demand. A trajectory optimizer can reduce this demand by avoiding unnecessary velocity changes and selecting speed profiles that maintain sufficient mission progress without creating excessive acceleration and braking cycles.
+
+Slope has a direct influence on energy demand. During uphill motion, the propulsion system must provide additional force to overcome the gravitational component acting against the vehicle. During downhill motion, gravity can contribute to vehicle acceleration, requiring braking or regenerative operation to maintain the desired speed. Energy-aware trajectory planning can therefore incorporate elevation information and modify velocity profiles according to upcoming slopes rather than treating the route as a purely two-dimensional geometric curve.
+
+Stopping behavior also affects energy efficiency. Frequent short stops followed by repeated acceleration can consume considerably more energy than continuous controlled motion when the environment permits it. However, energy optimization cannot simply eliminate stopping behavior because obstacles, traffic rules, docking operations, pedestrian interactions, and mission requirements may require the vehicle to stop. The planner should therefore minimize unnecessary stopping while preserving all required behavioral and safety constraints.
+
+Regenerative braking provides an important opportunity for energy recovery in electrically powered vehicles and AMRs. During deceleration, traction motors can operate as generators and convert part of the vehicle\'s kinetic energy into electrical energy. An energy-aware trajectory can therefore coordinate acceleration and deceleration so that regenerative braking is used effectively. The recovered energy depends on drivetrain characteristics, battery acceptance capability, operating conditions, and control strategy, so energy recovery should be represented using an appropriate vehicle model rather than assuming that all braking energy can be recovered.
+
+Regenerative braking also has operational limits. Battery state of charge, battery temperature, motor capability, inverter limits, and drivetrain efficiency can restrict the amount of energy that can be returned to the battery. When regenerative capability is insufficient, mechanical braking must dissipate the remaining energy. Trajectory optimization should therefore consider the available braking mechanisms and avoid creating deceleration profiles that exceed either regenerative or mechanical system capabilities.
+
+Comfort and energy objectives can sometimes conflict. Aggressive acceleration can reduce travel time but increase energy consumption and passenger or payload disturbance. Very conservative acceleration can reduce dynamic stress but increase mission duration and potentially increase auxiliary energy consumption. Similarly, maintaining a high speed may improve progress but increase aerodynamic and rolling losses. The trajectory optimizer must therefore balance these objectives within explicit operational requirements.
+
+This balance can be expressed through a multi-objective cost function. A general trajectory cost may contain tracking error, travel time, acceleration, jerk, lateral acceleration, steering variation, energy consumption, obstacle clearance, and terminal-state error. Each term contributes according to its defined weight or normalization. The resulting objective allows the planner to compare trajectories that have different combinations of smoothness, efficiency, and progress. Hard safety constraints remain separate from these preference-based costs.
+
+Normalization is important because comfort and energy terms have different physical units and numerical scales. Acceleration may be measured in meters per second squared, jerk in meters per second cubed, energy in joules or watt-hours, and travel time in seconds. Directly adding these quantities without normalization would give disproportionate influence to whichever term has the largest numerical magnitude. Proper scaling allows the optimization weights to represent meaningful trade-offs rather than accidental numerical effects.
+
+The optimization horizon also affects comfort and energy behavior. A short horizon may produce locally smooth motion but fail to anticipate a steep slope, sharp curve, or required stopping maneuver farther ahead. A longer horizon provides greater opportunity to coordinate speed and acceleration with future road geometry and terrain. However, longer horizons increase computational requirements and depend more strongly on uncertain environmental predictions. Practical systems therefore select the horizon according to vehicle speed, mission conditions, computational capability, and prediction quality.
+
+Trajectory continuity across replanning cycles is especially important for comfort. If each planning cycle independently selects the lowest-cost solution, the target acceleration or steering command can change unexpectedly between cycles. Such changes can create oscillatory behavior even though every individual trajectory is mathematically smooth. Maintaining consistency with the previously selected trajectory, penalizing excessive control variation, and warm-starting the optimization can help preserve smooth motion over successive planning cycles.
+
+For MPPI-based planning, comfort and energy objectives can be incorporated directly into the sampled trajectory cost. Each candidate control sequence is propagated through the vehicle model, and the resulting acceleration, jerk, steering, speed, terrain response, and energy demand are evaluated. Candidates that generate excessive dynamic disturbance or energy consumption receive higher costs. The path-integral weighting mechanism then shifts the control distribution toward trajectories that provide a more desirable combination of motion quality and efficiency.
+
+Polynomial trajectory methods provide another natural mechanism for comfort optimization. Because velocity, acceleration, and jerk can be obtained analytically from polynomial trajectories, these quantities can be included directly in the objective or constrained during trajectory construction. Quintic polynomials are particularly useful when initial and terminal position, velocity, and acceleration must be controlled. The resulting trajectory can be evaluated for jerk and acceleration characteristics before it is passed to the controller.
+
+Lattice planning can also incorporate comfort and energy into its edge costs. Each motion primitive can carry estimates of travel time, acceleration, jerk, curvature, energy demand, and other relevant quantities. During graph search, these costs accumulate along candidate branches. A trajectory containing repeated aggressive maneuvers can therefore become more expensive than a smoother alternative even when both trajectories are geometrically feasible. This allows comfort and efficiency to influence the search without changing the fundamental lattice structure.
+
+Vehicle and payload characteristics should influence the optimization parameters. A lightly loaded platform may tolerate faster acceleration than a heavily loaded platform, while a high center of gravity can increase sensitivity to lateral motion and braking. Sensitive inspection equipment may require stricter vibration and jerk limits than a robust transport payload. The planner can therefore use different motion constraints or objective weights according to estimated mass, payload distribution, center of gravity, mission type, and vehicle operating mode.
+
+Terrain introduces additional interactions between comfort and energy. On uneven surfaces, excessive speed can increase suspension motion, vertical acceleration, wheel unloading, and payload vibration. Reducing speed may improve stability while also reducing energy losses caused by repeated suspension and traction corrections. On soft or low-friction terrain, aggressive acceleration can create wheel slip, wasting energy while reducing controllability. Terrain-aware trajectory optimization should therefore consider traversability, traction, slope, roughness, and vehicle dynamics together.
+
+For heavy outdoor AMRs, the energy model should also account for auxiliary electrical loads when appropriate. Computing systems, LiDAR, cameras, radar, communication equipment, cooling systems, and payload devices can consume significant power independently of vehicle propulsion. A slower trajectory does not automatically minimize total mission energy if it substantially increases operating time and therefore auxiliary consumption. Energy optimization should consequently distinguish propulsion energy from time-dependent auxiliary energy when sufficient system information is available.
+
+Energy-aware planning is also connected to battery management. A trajectory that minimizes instantaneous power may not necessarily minimize overall battery impact. High current demand can affect electrical losses and thermal behavior, while repeated high-power events may influence available operating range. The planner can use battery state, expected terrain, payload, and mission requirements to avoid unnecessary high-power operation while preserving sufficient reserve for future mission segments.
+
+The final optimized trajectory must still be executable by the control system. The trajectory should contain consistent position, heading, velocity, acceleration, curvature, and timing information so that the controller can reproduce the intended motion. If the trajectory contains mathematically smooth but physically unrealistic commands, the controller may saturate or generate tracking errors. Feasibility checking and controller-aware trajectory generation are therefore necessary components of comfort and energy optimization.
+
+Evaluation should be performed using measurable system-level indicators rather than relying only on visual inspection of the trajectory. Useful measures include peak acceleration, peak jerk, integrated squared jerk, lateral acceleration, steering variation, travel time, propulsion energy, recovered regenerative energy, total energy consumption, stopping distance, and tracking error. These measurements allow different trajectory-generation methods and parameter configurations to be compared under repeatable simulation and real-vehicle conditions.
+
+The final objective is not simply to minimize comfort cost or energy cost independently. A practical trajectory should remain collision-free and physically feasible while providing appropriate route progress, stable vehicle behavior, acceptable payload dynamics, and efficient energy use. Polynomial optimization, lattice search, and MPPI can all incorporate these objectives in different ways, allowing the trajectory-generation architecture to select an approach appropriate to the vehicle, environment, and computational resources.
+
+Trajectory comfort and energy optimization therefore extends trajectory generation from geometric motion planning into system-level motion quality optimization. Acceleration and jerk control regulate dynamic smoothness, curvature and lateral acceleration influence cornering behavior, payload characteristics determine acceptable motion intensity, and terrain and drivetrain models determine energy demand. When these factors are integrated with hard safety constraints, dynamic feasibility, collision checking, and receding-horizon replanning, the trajectory becomes not only executable but also better aligned with the physical and operational requirements of autonomous vehicles and outdoor AMRs.
+
+궤적 최적화(Trajectory Optimization)는 차량이 기하학적인 목적지에 도달하는지만으로 평가해서는 안 된다. 실제 자율 시스템에서는 운동을 수행하는 과정에서 어떻게 느껴지는지와 얼마나 많은 에너지가 소비되는지도 고려해야 한다. 따라서 궤적 승차감 및 에너지 최적화(Trajectory Comfort and Energy Optimization)는 기존 경로 계획에 가속도(Acceleration), 저크(Jerk), 조향 변화(Steering Variation), 곡률(Curvature), 속도 프로파일(Speed Profile), 페이로드 안정성(Payload Stability) 및 전력 요구량(Power Demand)을 추가적인 궤적 목표로 포함한다. 목표는 안전성과 실행 가능성을 유지하면서 불필요한 동적 응력과 에너지 소비를 줄이는 운동을 생성하는 것이다.
+
+승차감(Comfort)은 차량 운동의 미분값(Derivative)과 밀접한 관련이 있다. 위치(Position)는 차량이 어디로 이동하는지를 정의하고, 속도(Velocity)는 얼마나 빠르게 진행하는지를 나타내며, 가속도는 속도가 변화하는 정도를 결정한다. 가속도의 변화율로 정의되는 저크(Jerk)는 특히 중요하다. 가속도 자체가 허용 가능한 범위에 있더라도 급격한 가속도 변화는 눈에 띄는 진동과 기계적 하중을 발생시킬 수 있기 때문이다. 가속도가 연속적이고 저크가 제한된 궤적은 일반적으로 급격한 제어 전환이 발생하는 궤적보다 부드러운 물리적 거동을 제공한다.
+
+승객을 운송하는 자율주행차에서 승차감은 종방향 가속도(Longitudinal Acceleration), 횡방향 가속도(Lateral Acceleration), 저크 및 조향 동작의 변화와 관련되는 경우가 많다. 야외 자율이동로봇(Outdoor AMR)에서는 이러한 개념을 더 넓게 해석해야 한다. 운반되는 페이로드는 민감한 장비, 검사 장비, 로봇 매니퓰레이터(Robotic Manipulator), 컨테이너 또는 기타 중량물일 수 있기 때문이다. 과도한 가속도는 페이로드를 이동시킬 수 있으며, 빠른 횡방향 운동은 롤(Roll) 및 요(Yaw) 교란을 발생시킬 수 있다. 따라서 AMR의 승차감 최적화는 차량의 운동 품질뿐만 아니라 페이로드의 동적 반응(Dynamic Response)도 고려해야 한다.
+
+종방향 승차감(Longitudinal Comfort)은 속도와 가속도 프로파일의 형상을 통해 제어할 수 있다. 큰 가속도를 즉시 적용하는 궤적은 목표 속도에 빠르게 도달할 수 있지만 높은 기계적 하중과 불필요한 교란을 발생시킬 수 있다. 보다 부드러운 프로파일은 가속도를 점진적으로 증가시키고 원하는 속도에 접근하면서 다시 감소시킨다. S-커브 운동 프로파일(S-Curve Motion Profile)은 저크를 제한하면서 가속도와 감속을 제어할 수 있기 때문에 특히 유용하다. 이러한 방식은 운동 품질과 기계적 내구성을 모두 향상시킬 수 있다.
+
+횡방향 승차감(Lateral Comfort)은 곡률, 조향률(Steering Rate), 횡가속도 및 차량 속도의 영향을 크게 받는다. 기하학적인 경로 자체가 충돌 가능성이 없더라도 과도한 속도로 급격한 곡선에 진입하면 큰 횡가속도가 발생할 수 있다. 따라서 궤적 최적화기는 속도와 곡률을 독립적으로 처리하기보다는 서로 연계하여 최적화할 수 있다. 곡률이 증가하면 속도를 낮추어 횡가속도를 허용 가능한 범위 안에 유지할 수 있다. 이러한 결합은 고속 자율주행차와 도로, 램프 및 곡선형 산업 경로에서 운용되는 중량 야외 AMR에 중요하다.
+
+유용한 승차감 목적함수(Comfort Objective Function)는 여러 운동량을 가중 비용(Weighted Cost)으로 결합할 수 있다. 가속도 크기는 동적 강도를 나타낼 수 있고, 저크는 급격한 변화 정도를 나타내며, 조향 변화는 방향 전환의 부드러움을 나타낼 수 있다. 횡가속도는 선회 하중(Cornering Load)을 나타낼 수 있다. 이러한 항목들을 궤적 전체에 걸쳐 가중된 비용으로 결합할 수 있다. 가중치는 모든 자율 플랫폼에 동일한 승차감 지표를 적용하기보다는 차량 구조와 임무 특성을 반영하도록 설정해야 한다.
+
+승차감 최적화는 안전성이나 물리적 실행 가능성을 무시해서는 안 된다. 저크가 매우 낮은 궤적은 정지에 지나치게 긴 거리를 필요로 할 수 있으며, 매우 부드러운 조향 프로파일은 장애물에 지나치게 접근하게 만들 수 있다. 마찬가지로 횡가속도를 최소화하면 불필요한 경로 이탈이 발생할 수 있다. 따라서 안전거리, 제동 능력, 조향 한계, 곡률 한계, 지형 제약조건 및 충돌 회피는 필수 제약조건(Mandatory Constraints)으로 유지하고, 승차감 항목은 실행 가능한 해의 범위 안에서 최적화해야 한다.
+
+에너지 최적화(Energy Optimization)는 궤적 생성에 또 다른 차원을 추가한다. 차량의 에너지 소비는 질량, 속도, 가속도, 구름 저항(Rolling Resistance), 공기 저항(Aerodynamic Resistance), 지형 경사, 구동계 효율(Drivetrain Efficiency) 및 제동 동작에 영향을 받는다. 따라서 동일한 기하학적 경로를 따르더라도 궤적에 따라 에너지 소비가 달라질 수 있다. 두 궤적이 정확히 동일한 경로를 따르더라도 하나가 반복적으로 가속과 감속을 수행한다면 다른 하나가 보다 안정적인 속도 프로파일을 유지하는 경우보다 더 많은 에너지를 소비할 수 있다.
+
+차량 질량은 중량 AMR에서 특히 중요하다. 병진 운동(Translational Motion)의 운동에너지는 속도의 제곱에 따라 증가하며, 가속에 필요한 힘은 차량 질량에 따라 증가한다. 따라서 불필요한 속도 증가와 반복적인 가속은 상당한 에너지 요구량을 발생시킬 수 있다. 궤적 최적화기는 불필요한 속도 변화를 피하고 충분한 임무 진행성을 유지하면서 과도한 가속 및 제동 사이클을 발생시키지 않는 속도 프로파일을 선택함으로써 이러한 요구량을 줄일 수 있다.
+
+경사는 에너지 요구량에 직접적인 영향을 준다. 오르막 주행에서는 구동 시스템이 차량에 반대 방향으로 작용하는 중력 성분을 극복하기 위해 추가적인 힘을 제공해야 한다. 내리막에서는 중력이 차량의 가속에 기여하므로 목표 속도를 유지하기 위해 제동 또는 회생 운전(Regenerative Operation)이 필요할 수 있다. 따라서 에너지 인식 궤적 계획(Energy-Aware Trajectory Planning)은 고도 정보를 포함하고 경로를 단순한 2차원 기하학적 곡선으로 취급하기보다 앞으로 나타날 경사에 따라 속도 프로파일을 조정할 수 있다.
+
+정지 동작 역시 에너지 효율에 영향을 준다. 환경이 허용하는 경우 반복적인 짧은 정지와 재가속은 지속적인 제어 운동보다 더 많은 에너지를 소비할 수 있다. 그러나 장애물, 교통 규칙, 도킹 작업, 보행자 상호작용 및 임무 요구사항으로 인해 차량의 정지가 필요할 수 있으므로 에너지 최적화가 단순히 정지 동작을 제거해서는 안 된다. 계획기는 필요한 행동 및 안전 제약조건을 유지하면서 불필요한 정지를 최소화해야 한다.
+
+회생 제동(Regenerative Braking)은 전기 구동 차량과 AMR에서 에너지를 회수할 수 있는 중요한 기회를 제공한다. 감속 과정에서 구동 모터는 발전기처럼 동작하여 차량의 운동에너지 일부를 전기에너지로 변환할 수 있다. 따라서 에너지 인식 궤적은 가속과 감속을 조정하여 회생 제동을 효과적으로 사용할 수 있다. 회수되는 에너지는 구동계 특성, 배터리의 에너지 수용 능력, 운용 조건 및 제어 전략에 따라 달라지므로, 모든 제동 에너지를 회수할 수 있다고 가정하기보다 적절한 차량 모델을 이용하여 에너지 회수를 표현해야 한다.
+
+회생 제동에는 운용상의 한계도 존재한다. 배터리 충전 상태(State of Charge, SOC), 배터리 온도, 모터 능력, 인버터 한계 및 구동계 효율은 배터리로 반환할 수 있는 에너지의 양을 제한할 수 있다. 회생 제동 능력이 충분하지 않은 경우 기계식 제동(Mechanical Braking)이 남은 에너지를 소산해야 한다. 따라서 궤적 최적화는 이용 가능한 제동 방식을 고려하고 회생 제동 및 기계식 제동 시스템의 능력을 초과하는 감속 프로파일을 생성하지 않아야 한다.
+
+승차감과 에너지 목표는 때때로 서로 충돌한다. 공격적인 가속은 이동 시간을 줄일 수 있지만 에너지 소비와 승객 또는 페이로드 교란을 증가시킬 수 있다. 매우 보수적인 가속은 동적 응력을 줄일 수 있지만 임무 수행 시간을 증가시키고 보조 시스템의 에너지 소비를 늘릴 수도 있다. 마찬가지로 높은 속도를 유지하면 진행성을 향상시킬 수 있지만 공기 저항 및 구름 저항을 증가시킬 수 있다. 따라서 궤적 최적화기는 명시적인 운용 요구사항 안에서 이러한 목표들의 균형을 조정해야 한다.
+
+이러한 균형은 다중 목적 비용함수(Multi-Objective Cost Function)로 표현할 수 있다. 일반적인 궤적 비용에는 추종 오차(Tracking Error), 이동 시간(Travel Time), 가속도, 저크, 횡가속도, 조향 변화, 에너지 소비, 장애물과의 거리 및 종단 상태 오차(Terminal-State Error)가 포함될 수 있다. 각 항목은 정의된 가중치 또는 정규화(Normalization)에 따라 기여한다. 이러한 목적함수를 사용하면 계획기는 부드러움, 효율성 및 진행성의 서로 다른 조합을 가진 궤적을 비교할 수 있다. 필수적인 안전 제약조건은 이러한 선호 기반 비용(Preference-Based Cost)과 별도로 유지한다.
+
+정규화는 승차감과 에너지 항목이 서로 다른 물리적 단위와 수치적 크기를 갖기 때문에 중요하다. 가속도는 미터/초², 저크는 미터/초³, 에너지는 줄(Joule) 또는 와트시(Watt-Hour), 이동 시간은 초 단위로 측정될 수 있다. 이러한 값을 정규화 없이 직접 더하면 수치적 크기가 가장 큰 항목이 과도한 영향력을 갖게 된다. 적절한 스케일링(Scaling)을 적용하면 최적화 가중치가 우연한 수치 효과가 아니라 의미 있는 상충 관계를 표현하도록 할 수 있다.
+
+최적화 지평선(Optimization Horizon) 역시 승차감과 에너지 거동에 영향을 준다. 짧은 지평선은 국부적으로 부드러운 운동을 생성할 수 있지만 멀리 앞에 있는 급경사, 급곡선 또는 필요한 정지 기동을 충분히 예측하지 못할 수 있다. 긴 지평선은 속도와 가속도를 미래의 도로 기하학 및 지형과 조정할 수 있는 더 많은 기회를 제공한다. 그러나 긴 지평선은 계산 요구량을 증가시키고 불확실한 환경 예측에 더 크게 의존한다. 따라서 실제 시스템에서는 차량 속도, 임무 조건, 계산 능력 및 예측 품질을 기준으로 지평선을 선택해야 한다.
+
+재계획 주기 사이의 궤적 연속성(Trajectory Continuity)은 승차감을 위해 특히 중요하다. 각 계획 주기에서 독립적으로 가장 낮은 비용의 해를 선택하면 주기 사이에서 목표 가속도나 조향 명령이 예상치 못하게 변할 수 있다. 모든 개별 궤적이 수학적으로 부드럽더라도 이러한 변화는 진동성 거동(Oscillatory Behavior)을 발생시킬 수 있다. 이전에 선택된 궤적과의 일관성을 유지하고 과도한 제어 변화를 페널티로 부여하며 최적화를 웜 스타트(Warm Start)하면 연속적인 계획 주기에서 부드러운 운동을 유지하는 데 도움이 될 수 있다.
+
+MPPI(Model Predictive Path Integral) 기반 계획에서는 승차감과 에너지 목적을 샘플링된 궤적의 비용에 직접 포함할 수 있다. 각각의 후보 제어 시퀀스는 차량 모델을 통해 전파되고, 그 결과로 생성된 가속도, 저크, 조향, 속도, 지형 반응 및 에너지 요구량을 평가한다. 과도한 동적 교란이나 에너지 소비를 발생시키는 후보에는 더 높은 비용을 부여한다. 이후 경로 적분 가중 메커니즘(Path-Integral Weighting Mechanism)은 운동 품질과 효율성의 보다 바람직한 조합을 제공하는 궤적 방향으로 제어 분포를 이동시킨다.
+
+다항식 궤적 방법(Polynomial Trajectory Method) 역시 승차감 최적화를 위한 자연스러운 방법을 제공한다. 다항식 궤적에서는 속도, 가속도 및 저크를 해석적으로 계산할 수 있기 때문에 이러한 값을 목적함수에 직접 포함하거나 궤적 생성 과정에서 제약할 수 있다. 초기 및 종단 위치, 속도 및 가속도를 제어해야 하는 경우 5차 다항식(Quintic Polynomial)이 특히 유용하다. 생성된 궤적은 제어기에 전달되기 전에 저크와 가속도 특성에 대해 평가할 수 있다.
+
+격자 계획(Lattice Planning) 역시 엣지 비용(Edge Cost)에 승차감과 에너지를 포함할 수 있다. 각각의 모션 프리미티브(Motion Primitive)는 이동 시간, 가속도, 저크, 곡률, 에너지 요구량 및 기타 관련 물리량에 대한 추정값을 가질 수 있다. 그래프 탐색 과정에서는 이러한 비용이 후보 분기(Candidate Branch)를 따라 누적된다. 따라서 반복적인 공격적 기동을 포함하는 궤적은 두 궤적이 모두 기하학적으로 실행 가능하더라도 더 부드러운 대안보다 높은 비용을 갖게 될 수 있다. 이를 통해 기본적인 격자 구조를 변경하지 않고 승차감과 효율성이 탐색에 영향을 미치도록 할 수 있다.
+
+차량과 페이로드의 특성은 최적화 파라미터에 영향을 주어야 한다. 가벼운 플랫폼은 무거운 플랫폼보다 더 빠른 가속을 허용할 수 있으며, 높은 무게중심은 횡방향 운동과 제동에 대한 민감도를 증가시킬 수 있다. 민감한 검사 장비는 견고한 운송용 페이로드보다 더 엄격한 진동 및 저크 제한을 필요로 할 수 있다. 따라서 계획기는 추정 질량, 페이로드 분포, 무게중심, 임무 유형 및 차량 운용 모드에 따라 서로 다른 운동 제약조건 또는 목적함수 가중치를 사용할 수 있다.
+
+지형은 승차감과 에너지 사이에 추가적인 상호작용을 만든다. 불규칙한 지형에서는 과도한 속도가 서스펜션 운동, 수직 가속도, 휠 하중 감소(Wheel Unloading) 및 페이로드 진동을 증가시킬 수 있다. 속도를 낮추면 안정성이 향상되는 동시에 반복적인 서스펜션 및 접지력 보정으로 인해 발생하는 에너지 손실도 줄일 수 있다. 부드럽지 않거나 마찰이 낮은 지형에서는 공격적인 가속이 휠 슬립을 발생시켜 제어 가능성을 감소시키면서 에너지를 낭비할 수 있다. 따라서 지형 인식 궤적 최적화(Terrain-Aware Trajectory Optimization)는 주행 가능성(Traversability), 접지력(Traction), 경사, 거칠기(Roughness) 및 차량 동역학을 함께 고려해야 한다.
+
+중량 야외 AMR의 경우 에너지 모델은 필요한 경우 보조 전기 부하(Auxiliary Electrical Load)도 고려해야 한다. 컴퓨팅 시스템, LiDAR, 카메라, 레이더, 통신 장비, 냉각 시스템 및 페이로드 장치는 추진과 독립적으로 상당한 전력을 소비할 수 있다. 느린 궤적이 항상 전체 임무 에너지를 최소화하는 것은 아니다. 운용 시간이 크게 증가하여 보조 시스템의 에너지 소비가 증가할 수 있기 때문이다. 따라서 충분한 시스템 정보가 제공된다면 에너지 최적화는 추진 에너지(Propulsion Energy)와 시간 의존적 보조 에너지(Time-Dependent Auxiliary Energy)를 구분해야 한다.
+
+에너지 인식 계획은 배터리 관리(Battery Management)와도 연결된다. 순간적인 전력 소비를 최소화하는 궤적이 반드시 전체적인 배터리 영향을 최소화하는 것은 아니다. 높은 전류 요구는 전기적 손실과 열적 거동에 영향을 줄 수 있으며, 반복적인 고출력 이벤트는 이용 가능한 운용 범위에 영향을 줄 수 있다. 계획기는 배터리 상태, 예상 지형, 페이로드 및 임무 요구사항을 활용하여 향후 임무 구간에 필요한 충분한 에너지 여유를 유지하면서 불필요한 고출력 운용을 피할 수 있다.
+
+최종적으로 최적화된 궤적은 제어 시스템이 실행할 수 있어야 한다. 궤적에는 제어기가 의도된 운동을 재현할 수 있도록 일관된 위치, 방향각, 속도, 가속도, 곡률 및 시간 정보가 포함되어야 한다. 궤적이 수학적으로 부드럽지만 물리적으로 비현실적인 명령을 포함하면 제어기가 포화(Saturation)되거나 추종 오차(Tracking Error)를 발생시킬 수 있다. 따라서 실행 가능성 검사(Feasibility Checking)와 제어기 인식 궤적 생성(Controller-Aware Trajectory Generation)은 승차감 및 에너지 최적화의 필수적인 구성요소이다.
+
+평가는 단순히 궤적을 시각적으로 확인하는 것보다 측정 가능한 시스템 수준 지표(System-Level Indicator)를 이용하여 수행해야 한다. 유용한 지표에는 최대 가속도(Peak Acceleration), 최대 저크(Peak Jerk), 저크 제곱 적분(Integrated Squared Jerk), 횡가속도, 조향 변화, 이동 시간, 추진 에너지(Propulsion Energy), 회생 에너지, 총 에너지 소비, 제동 거리 및 추종 오차가 포함될 수 있다. 이러한 측정값은 반복 가능한 시뮬레이션과 실제 차량 조건에서 서로 다른 궤적 생성 방법과 파라미터 구성을 비교할 수 있도록 한다.
+
+최종 목표는 승차감 비용이나 에너지 비용을 각각 독립적으로 최소화하는 것이 아니다. 실제 궤적은 충돌이 없고 물리적으로 실행 가능하면서 적절한 경로 진행성, 안정적인 차량 거동, 허용 가능한 페이로드 동역학 및 효율적인 에너지 사용을 제공해야 한다. 다항식 최적화, 격자 탐색 및 MPPI는 이러한 목표를 서로 다른 방식으로 포함할 수 있으며, 이를 통해 궤적 생성 아키텍처는 차량, 환경 및 계산 자원에 적합한 방법을 선택할 수 있다.
+
+따라서 궤적 승차감 및 에너지 최적화(Trajectory Comfort and Energy Optimization)는 궤적 생성을 기하학적 운동 계획(Geometric Motion Planning)에서 시스템 수준의 운동 품질 최적화(System-Level Motion Quality Optimization)로 확장한다. 가속도와 저크 제어는 동적 부드러움을 조절하고, 곡률과 횡가속도는 선회 거동에 영향을 주며, 페이로드 특성은 허용 가능한 운동 강도를 결정하고, 지형 및 구동계 모델은 에너지 요구량을 결정한다. 이러한 요소를 하드 안전 제약조건(Hard Safety Constraints), 동적 실행 가능성(Dynamic Feasibility), 충돌 검사(Collision Checking) 및 이동 지평선 재계획(Receding-Horizon Replanning)과 통합하면 궤적은 단순히 실행 가능한 수준을 넘어 자율주행차와 야외 자율이동로봇의 물리적 및 운용적 요구사항에 더욱 적합한 운동을 제공할 수 있다.
+
+##  
+
+## 07.07. Trajectory Feasibility Check Curvature Speed Limits [w/Code]
+
+![](images/image7.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+Trajectory feasibility checking is the process of determining whether a generated trajectory can be physically executed by the vehicle while remaining within operational and safety limits. A mathematically smooth trajectory is not necessarily feasible because it may demand excessive speed, acceleration, curvature, steering angle, braking capability, or lateral motion. Feasibility checking therefore acts as a mandatory validation layer between trajectory generation and trajectory selection or control execution.
+
+The first requirement is to evaluate the trajectory as a time-dependent state sequence rather than as a collection of geometric points. Each trajectory sample should provide position, heading, velocity, acceleration, curvature, and timing information when available. These quantities allow the planner to determine whether the complete motion remains within vehicle-specific limits throughout the planning horizon. Checking only the initial and terminal states can miss critical violations occurring between them.
+
+Speed feasibility is one of the most direct checks. The trajectory velocity must remain within the permitted operating range and must also be consistent with environmental and mission constraints. A road may impose a speed limit, while an AMR operating in an industrial yard may have a lower configured maximum speed. Speed should also be reduced when geometry, terrain, obstacle proximity, visibility, or stopping requirements make the nominal maximum speed inappropriate.
+
+A speed limit is therefore not always a single constant value. The feasible speed can depend on curvature, road condition, slope, obstacle distance, localization uncertainty, and vehicle operating mode. A trajectory that remains below a global maximum speed may still be unsafe if it enters a sharp curve too quickly. Practical feasibility checking can consequently derive a local speed bound and compare the planned velocity against the most restrictive applicable limit.
+
+Curvature is a fundamental geometric feasibility variable because it describes how sharply the trajectory changes direction. For a planar path, curvature can be expressed as the rate of change of heading with respect to traveled distance. A vehicle with a finite steering range and wheelbase cannot follow arbitrarily large curvature. The planner must therefore reject or modify trajectories whose curvature exceeds the platform\'s achievable limit, particularly near tight turns, obstacle-avoidance maneuvers, and narrow passages.
+
+Curvature is also coupled to vehicle speed through lateral acceleration. For a trajectory moving at speed v along a path with curvature κ, lateral acceleration can be approximated by a_y = v²κ. This relationship means that a trajectory can satisfy the maximum curvature constraint and still generate excessive lateral acceleration at high speed. Feasibility checking should therefore evaluate curvature and speed together rather than treating them as completely independent limits.
+
+Steering feasibility provides another layer of validation. For an Ackermann-steered vehicle, curvature is related to steering angle through the vehicle\'s geometric parameters, so a curvature limit can be converted into an approximate steering requirement. Steering rate and steering acceleration may also be limited because the actuator cannot change steering instantaneously. A trajectory that is geometrically feasible but requires unrealistic steering dynamics should therefore be rejected or regenerated.
+
+Longitudinal acceleration and braking must also remain within physical limits. Excessive acceleration can exceed motor capability, reduce tire-ground traction, disturb payloads, or increase energy consumption. Excessive deceleration may exceed available braking force or create unacceptable passenger and payload loads. The feasibility checker should evaluate both positive and negative acceleration and should consider whether sufficient distance remains to stop safely under the current speed and environmental conditions.
+
+Jerk provides an additional dynamic feasibility and smoothness constraint. Because jerk is the derivative of acceleration, large jerk values indicate rapid changes in longitudinal or lateral force demand. Although jerk is often treated as a comfort objective, an upper bound can also be useful for actuator protection, payload stability, and controller tracking. A trajectory with acceptable acceleration but extremely abrupt acceleration changes may therefore still fail the feasibility check.
+
+Vehicle dimensions must be included in feasibility evaluation because the trajectory describes the motion of a physical platform rather than a mathematical point. The vehicle footprint, wheelbase, overhangs, and relevant sensor or payload envelopes should be considered when checking road boundaries and obstacles. This is especially important for large outdoor AMRs, where the body may extend significantly beyond the reference trajectory centerline.
+
+Collision feasibility must be evaluated along the complete trajectory. Static obstacles can be checked against the swept vehicle footprint, while dynamic obstacles require comparison between the vehicle trajectory and predicted obstacle positions at corresponding times. A candidate should be rejected if any portion of the planned motion enters a forbidden region or violates the required safety margin. Collision checking is therefore closely connected to, but distinct from, purely kinematic feasibility.
+
+Terrain and operating conditions can further modify the feasible trajectory set for outdoor AMRs. Slopes, rough surfaces, low-friction areas, curbs, soft ground, and uneven terrain can impose additional restrictions on speed, acceleration, curvature, and stability. A trajectory that is feasible on a flat paved road may become unsuitable on rough terrain because of wheel slip, excessive roll or pitch, suspension response, or payload disturbance. Feasibility checking should therefore use available traversability information when required.
+
+The final feasibility decision should distinguish between hard constraints and optimization preferences. Collision, maximum steering, maximum curvature, vehicle speed limits, actuator limits, and minimum stopping capability are generally treated as conditions that can invalidate a candidate. Comfort, energy consumption, route deviation, and travel time can instead remain optimization objectives among the feasible candidates. This separation prevents a low-cost trajectory from being selected simply because it compensates for a fundamental physical or safety violation.
+
+Feasibility checking should also account for uncertainty and execution margins. Localization error, model error, actuator delay, perception uncertainty, and changing road conditions can cause the actual vehicle state to deviate from the nominal trajectory. Operating exactly at a theoretical limit leaves little margin for these uncertainties. Practical systems can therefore apply conservative bounds or safety margins so that the planned trajectory remains executable when real-world conditions differ from the nominal model.
+
+The result of feasibility checking is normally a filtered trajectory set. Candidates that violate mandatory constraints are removed, while the remaining trajectories are passed to the cost evaluation or selection stage. This ordering is important because optimization should not spend resources comparing trajectories that cannot physically or safely be executed. The process can therefore be expressed as trajectory generation, feasibility filtering, collision validation, cost evaluation, selection, and controller execution.
+
+Feasibility must be reconsidered whenever the vehicle state or environment changes. In a receding-horizon architecture, a trajectory that was feasible during one planning cycle may become infeasible during the next cycle because of a newly detected obstacle, changed speed limit, altered localization estimate, terrain condition, or actuator state. Continuous replanning therefore requires the feasibility checker to operate repeatedly rather than treating feasibility as a one-time property of a trajectory.
+
+For high-speed outdoor AMRs, the relationship between speed, curvature, braking distance, and stopping capability becomes especially important. Increasing speed reduces the available reaction and stopping margin while amplifying lateral acceleration for a given curvature. The planner must consequently coordinate speed and path geometry rather than selecting them independently. Feasibility checking provides the mechanism for rejecting trajectories whose combined motion state exceeds the physical or operational capability of the platform.
+
+A robust trajectory feasibility checker therefore serves as a final physical reality filter for trajectory generation. It verifies speed, acceleration, jerk, curvature, steering, braking, vehicle footprint, collision clearance, terrain compatibility, and relevant operating limits across the entire planned motion. By separating mandatory feasibility constraints from softer objectives such as comfort and energy efficiency, it ensures that subsequent trajectory optimization and controller integration operate only on motion candidates that the autonomous vehicle or outdoor AMR can realistically execute.
+
+궤적 실행 가능성 검사(Trajectory Feasibility Checking)는 생성된 궤적이 차량에 의해 물리적으로 실행될 수 있는 동시에 운용 및 안전 한계 내에 있는지를 판단하는 과정이다. 수학적으로 부드러운 궤적이라고 해서 반드시 실행 가능한 것은 아니다. 과도한 속도, 가속도, 곡률, 조향각, 제동 능력 또는 횡방향 운동을 요구할 수 있기 때문이다. 따라서 실행 가능성 검사는 궤적 생성(Trajectory Generation)과 궤적 선택 또는 제어 실행 사이에서 수행되는 필수 검증 계층(Mandatory Validation Layer)으로 동작한다.
+
+첫 번째 요구사항은 궤적을 단순한 기하학적 점들의 집합이 아니라 시간에 따른 상태 시퀀스(Time-Dependent State Sequence)로 평가하는 것이다. 각 궤적 샘플은 가능한 경우 위치(Position), 방향각(Heading), 속도(Velocity), 가속도(Acceleration), 곡률(Curvature) 및 시간(Timing) 정보를 제공해야 한다. 이러한 값들을 이용하면 계획기는 전체 계획 구간(Planning Horizon) 동안 운동이 차량별 한계 내에 유지되는지를 판단할 수 있다. 초기 상태와 종단 상태만 검사하면 그 사이에서 발생하는 중요한 제약조건 위반을 놓칠 수 있다.
+
+속도 실행 가능성(Speed Feasibility)은 가장 직접적으로 확인할 수 있는 항목 중 하나이다. 궤적의 속도는 허용된 운용 범위 안에 있어야 하며 환경 및 임무 제약조건과도 일치해야 한다. 도로에서는 법정 또는 설정된 속도 제한이 존재할 수 있고, 산업 현장에서 운용되는 AMR에서는 더 낮은 구성상 최대 속도가 적용될 수 있다. 또한 기하학적 구조, 지형, 장애물과의 거리, 가시성 또는 정지 요구사항에 따라 일반적인 최대 속도보다 속도를 낮춰야 할 수도 있다.
+
+따라서 속도 제한(Speed Limit)은 항상 하나의 일정한 값일 필요는 없다. 실행 가능한 속도는 곡률, 도로 상태, 경사, 장애물 거리, 위치추정 불확실성 및 차량 운용 모드에 따라 달라질 수 있다. 전체 최대 속도보다 낮은 속도로 주행하는 궤적이라도 급격한 곡선에 너무 빠른 속도로 진입하면 여전히 안전하지 않을 수 있다. 따라서 실제 실행 가능성 검사는 국부 속도 한계(Local Speed Bound)를 계산하고 계획된 속도가 적용 가능한 여러 제한 중 가장 엄격한 제한을 초과하지 않는지 비교할 수 있다.
+
+곡률(Curvature)은 궤적의 방향이 얼마나 급격하게 변화하는지를 나타내는 기본적인 기하학적 실행 가능성 변수이다. 평면 경로에서 곡률은 이동 거리 대비 방향각 변화율로 표현할 수 있다. 유한한 조향 범위와 휠베이스(Wheelbase)를 가진 차량은 임의로 큰 곡률을 추종할 수 없다. 따라서 계획기는 플랫폼이 달성할 수 있는 한계를 초과하는 곡률을 가진 궤적을 제거하거나 수정해야 하며, 특히 급회전, 장애물 회피 기동 및 좁은 통로에서 이를 중요하게 고려해야 한다.
+
+곡률은 또한 횡가속도(Lateral Acceleration)를 통해 차량 속도와 연결된다. 경로의 곡률이 κ이고 속도가 v인 경우 횡가속도는 대략 a_y = v²κ로 표현할 수 있다. 이는 궤적이 최대 곡률 제약조건을 만족하더라도 높은 속도에서는 과도한 횡가속도를 발생시킬 수 있음을 의미한다. 따라서 실행 가능성 검사는 곡률과 속도를 완전히 독립적인 한계로 취급하기보다는 두 요소를 함께 평가해야 한다.
+
+조향 실행 가능성(Steering Feasibility)은 또 다른 검증 계층을 제공한다. 애커먼 조향(Ackermann Steering) 차량에서는 곡률이 차량의 기하학적 파라미터를 통해 조향각과 관련되므로 곡률 한계를 필요한 조향 요구량으로 변환할 수 있다. 조향률(Steering Rate)과 조향 가속도(Steering Acceleration) 역시 제한될 수 있는데, 액추에이터는 조향을 순간적으로 변경할 수 없기 때문이다. 따라서 기하학적으로 실행 가능한 궤적이라도 비현실적인 조향 동역학(Steering Dynamics)을 요구한다면 제거하거나 다시 생성해야 한다.
+
+종방향 가속도와 제동(Longitudinal Acceleration and Braking) 역시 물리적 한계 안에 있어야 한다. 과도한 가속은 모터 능력을 초과하거나 타이어와 지면 사이의 접지력을 감소시키고, 페이로드를 교란하거나 에너지 소비를 증가시킬 수 있다. 과도한 감속은 이용 가능한 제동력을 초과하거나 승객과 페이로드에 허용하기 어려운 하중을 발생시킬 수 있다. 실행 가능성 검사기는 양의 가속과 음의 가속을 모두 평가해야 하며, 현재 속도와 환경 조건에서 안전하게 정지하기까지 충분한 거리가 남아 있는지도 고려해야 한다.
+
+저크(Jerk)는 추가적인 동적 실행 가능성 및 부드러움(Smoothness) 제약조건을 제공한다. 저크는 가속도의 시간에 따른 변화율이므로 큰 저크 값은 종방향 또는 횡방향 힘 요구량이 빠르게 변화한다는 것을 의미한다. 저크는 일반적으로 승차감(Comfort) 목적함수로 취급되지만 액추에이터 보호, 페이로드 안정성 및 제어기 추종 성능을 위해 상한값을 설정하는 것도 유용하다. 따라서 허용 가능한 가속도를 가지면서도 가속도가 매우 급격하게 변화하는 궤적은 실행 가능성 검사를 통과하지 못할 수 있다.
+
+차량의 크기와 형상(Vehicle Dimensions)은 실행 가능성 평가에 포함되어야 한다. 궤적은 수학적인 점의 움직임이 아니라 실제 물리적 플랫폼의 움직임을 표현하기 때문이다. 차량의 외곽 형상(Footprint), 휠베이스, 오버행(Overhang) 및 관련 센서나 페이로드의 외곽 영역(Envelope)을 고려하여 도로 경계와 장애물을 검사해야 한다. 이는 차체가 기준 궤적의 중심선에서 상당히 벗어나 확장될 수 있는 대형 야외 AMR에서 특히 중요하다.
+
+충돌 실행 가능성(Collision Feasibility)은 전체 궤적을 따라 평가해야 한다. 정적 장애물(Static Obstacle)은 차량 외곽 형상의 이동 영역(Swept Vehicle Footprint)을 기준으로 검사할 수 있으며, 동적 장애물(Dynamic Obstacle)은 해당 시간에 예측된 장애물 위치와 차량 궤적을 비교해야 한다. 후보 궤적의 어느 부분이라도 금지 영역(Forbidden Region)에 진입하거나 요구되는 안전 여유거리(Safety Margin)를 위반한다면 해당 후보를 제거해야 한다. 따라서 충돌 검사는 순수한 운동학적 실행 가능성과 밀접하게 연결되지만 동일한 개념은 아니다.
+
+지형과 운용 조건(Terrain and Operating Conditions)은 야외 AMR의 실행 가능한 궤적 집합을 추가적으로 변화시킬 수 있다. 경사, 거친 표면, 낮은 마찰 영역, 연석 및 부드러운 지반, 불균일한 지형은 속도, 가속도, 곡률 및 안정성에 추가적인 제한을 부여할 수 있다. 평탄한 포장도로에서는 실행 가능한 궤적이 거친 지형에서는 휠 슬립, 과도한 롤 또는 피치, 서스펜션 반응 또는 페이로드 교란 때문에 적합하지 않을 수 있다. 따라서 필요한 경우 실행 가능성 검사는 이용 가능한 주행 가능성 정보(Traversability Information)를 활용해야 한다.
+
+최종 실행 가능성 결정은 하드 제약조건(Hard Constraints)과 최적화 선호사항(Optimization Preferences)을 구분해야 한다. 충돌, 최대 조향, 최대 곡률, 차량 속도 제한, 액추에이터 한계 및 최소 정지 능력은 일반적으로 후보 궤적을 무효화할 수 있는 조건으로 취급한다. 반면 승차감, 에너지 소비, 경로 편차 및 이동 시간은 실행 가능한 후보들 사이에서 최적화할 수 있는 목표로 유지할 수 있다. 이러한 구분은 낮은 비용을 갖는다는 이유만으로 근본적인 물리적 또는 안전 제약조건을 위반하는 궤적이 선택되는 것을 방지한다.
+
+실행 가능성은 불확실성과 실행 여유(Uncertainty and Execution Margin)도 고려해야 한다. 위치추정 오차, 모델 오차, 액추에이터 지연, 인지 불확실성 및 변화하는 도로 조건은 실제 차량 상태가 명목 궤적(Nominal Trajectory)에서 벗어나게 만들 수 있다. 이론적인 한계에서 정확히 운용하면 이러한 불확실성을 흡수할 여유가 거의 없다. 따라서 실제 시스템에서는 보수적인 한계(Conservative Bound) 또는 안전 여유를 적용하여 실제 환경이 명목 모델과 다르더라도 계획된 궤적이 실행 가능하도록 할 수 있다.
+
+실행 가능성 검사의 결과는 일반적으로 필터링된 궤적 집합(Filtered Trajectory Set)이다. 필수 제약조건을 위반하는 후보는 제거하고, 남은 궤적은 비용 평가(Cost Evaluation) 또는 선택 단계(Selection Stage)로 전달한다. 이러한 순서는 중요하다. 최적화 과정에서 물리적으로 또는 안전하게 실행할 수 없는 궤적을 서로 비교하는 데 계산 자원을 사용할 필요가 없기 때문이다. 따라서 전체 과정은 궤적 생성, 실행 가능성 필터링, 충돌 검증, 비용 평가, 선택 및 제어기 실행의 흐름으로 표현할 수 있다.
+
+차량 상태나 환경이 변화할 때마다 실행 가능성을 다시 평가해야 한다. 이동 지평선 구조(Receding-Horizon Architecture)에서는 한 계획 주기에서 실행 가능했던 궤적이 다음 주기에는 새롭게 감지된 장애물, 변경된 속도 제한, 달라진 위치추정 결과, 지형 조건 또는 액추에이터 상태 때문에 실행 불가능해질 수 있다. 따라서 지속적인 재계획(Continuous Replanning)에서는 실행 가능성 검사기를 궤적에 대한 일회성 평가가 아니라 반복적으로 수행해야 한다.
+
+고속 야외 AMR에서는 속도, 곡률, 제동거리 및 정지 능력 사이의 관계가 특히 중요하다. 속도가 증가하면 반응 및 정지에 사용할 수 있는 여유가 감소하는 동시에 동일한 곡률에서 횡가속도가 증가한다. 따라서 계획기는 속도와 경로 형상을 독립적으로 선택하기보다 서로 연계해야 한다. 실행 가능성 검사는 이러한 운동 상태의 조합이 플랫폼의 물리적 또는 운용 능력을 초과하는 궤적을 제거하는 메커니즘을 제공한다.
+
+강건한 궤적 실행 가능성 검사기(Robust Trajectory Feasibility Checker)는 궤적 생성에 대한 최종적인 물리적 현실 필터(Physical Reality Filter) 역할을 한다. 전체 계획된 운동에 걸쳐 속도, 가속도, 저크, 곡률, 조향, 제동, 차량 외곽 형상, 충돌 여유거리, 지형 적합성 및 관련 운용 한계를 검증한다. 필수 실행 가능성 제약조건과 승차감 및 에너지 효율과 같은 보다 유연한 목표를 분리함으로써 이후의 궤적 최적화와 제어기 통합이 자율주행차 또는 야외 AMR이 실제로 실행할 수 있는 운동 후보만을 대상으로 수행되도록 한다.
+
+##  
+
+## 07.08. Dynamic Re Planning Under Changing Conditions [w/Code]
+
+![](images/image8.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+Dynamic re-planning allows an autonomous vehicle or mobile robot to continuously revise its trajectory when the operating environment differs from what was previously predicted. A trajectory that was safe and efficient only moments earlier may become unsuitable because an obstacle moves, a pedestrian appears, another robot changes direction, localization shifts, or terrain conditions change. Re-planning therefore treats trajectory generation as a continuous closed-loop process rather than a one-time calculation.
+
+The process begins with continuous updates of the vehicle state and surrounding environment. Localization estimates position, heading, and velocity, while perception identifies static and dynamic objects, free space, road boundaries, and relevant terrain characteristics. Prediction modules estimate how moving objects may evolve over the planning horizon. These updated observations form a new planning context that can differ significantly from the assumptions used during the previous trajectory-generation cycle.
+
+A practical architecture commonly follows the receding-horizon principle. The planner generates a trajectory over a finite future horizon but executes only its initial portion. Before the complete trajectory is followed, new localization, perception, and prediction information becomes available and another planning cycle begins. The horizon is shifted forward repeatedly, allowing the trajectory to evolve with the environment while maintaining a forward-looking representation of future vehicle motion.
+
+The previously selected trajectory provides an important reference for the next planning cycle. Re-planning from an entirely unrelated solution at every update can produce unstable or oscillatory motion. Instead, the remaining portion of the previous trajectory can be shifted forward and used as an initial guess, nominal trajectory, or consistency reference. This warm-start strategy reduces computation and encourages temporal continuity while still allowing significant changes when new conditions require them.
+
+Changes in dynamic obstacles are among the most common triggers for trajectory revision. A vehicle entering the planned corridor, a pedestrian crossing the route, or another AMR slowing unexpectedly can invalidate the current trajectory. The planner must compare predicted obstacle states with the ego trajectory at corresponding future times. Depending on the situation, the new solution may reduce speed, stop, modify lateral position, or select another locally feasible path.
+
+Static environmental changes can also require re-planning. Construction barriers, temporarily blocked corridors, parked vehicles, fallen objects, or newly detected road boundaries may invalidate previously available space. Unlike dynamic obstacles, these changes may persist for an extended period and can require a larger modification of the local route. If the local planner cannot find a feasible trajectory, the system may need to request a new route from the global planning layer.
+
+Localization changes represent another source of trajectory invalidation. Improved sensor observations may shift the estimated vehicle pose relative to the map or reference path. Even a small correction can affect lateral offset, heading error, obstacle clearance, and predicted tracking behavior. The planner should therefore regenerate or adjust the trajectory using the latest state estimate rather than assuming that the vehicle remains exactly on the previously predicted motion.
+
+Vehicle condition can also change during operation. Payload variation, battery state, actuator temperature, tire or wheel behavior, braking capability, and steering performance may alter the feasible motion envelope. A heavy payload may require lower acceleration and larger stopping margins, while degraded traction can reduce acceptable lateral acceleration. Dynamic re-planning should therefore use updated platform constraints when they materially affect trajectory feasibility.
+
+Terrain-dependent conditions are especially important for outdoor AMRs. Rain, loose gravel, mud, uneven surfaces, slopes, or newly detected rough terrain can change traction and stability requirements. A trajectory that was feasible under nominal conditions may become unsafe when friction decreases or terrain roughness increases. The planner can respond by reducing speed, limiting curvature, increasing obstacle margins, or selecting a more traversable route segment.
+
+Re-planning must distinguish between minor trajectory correction and major maneuver change. Small deviations may be handled by adjusting speed, curvature, or lateral offset while preserving the existing route. More significant events can require stopping, overtaking, changing corridors, reversing, or requesting global route modification. A hierarchical planning architecture helps separate local trajectory adaptation from route-level decisions so that every environmental change does not unnecessarily trigger a complete global re-plan.
+
+Trajectory feasibility must be checked again after every meaningful update. The newly generated candidate trajectories should satisfy speed, acceleration, jerk, curvature, steering, braking, collision, terrain, and vehicle-footprint constraints. A previously feasible trajectory cannot be assumed to remain feasible simply because its geometric shape has not changed. Updated vehicle state and environmental conditions can change the physical validity of the same nominal trajectory.
+
+Collision checking during dynamic re-planning must be time-aware. The planner should compare the predicted ego position and vehicle footprint with predicted obstacle states at matching future timestamps. This enables the planner to distinguish between a path that is geometrically occupied now but will become free and one that appears clear now but will become occupied. Time-dependent evaluation supports decisions such as slowing, waiting, passing before an obstacle, or selecting another path.
+
+Prediction uncertainty should influence the re-planning strategy. Future motion of pedestrians, vehicles, and other robots cannot be known exactly, particularly over longer horizons. The planner can represent uncertainty through enlarged safety regions, probabilistic predictions, multiple motion hypotheses, or conservative constraints. As uncertainty increases, the system may reduce speed or preserve additional maneuvering space instead of relying on a single deterministic prediction.
+
+Re-planning frequency must be selected according to vehicle dynamics and environmental change rate. Faster planning updates improve responsiveness but increase computational demand and can amplify sensitivity to noisy perception. Slower updates reduce computation but may react too late to rapidly changing conditions. The appropriate frequency depends on operating speed, stopping distance, sensor update rate, controller bandwidth, prediction horizon, and available computing resources.
+
+Latency is as important as nominal planning frequency. Sensor acquisition, perception, prediction, optimization, communication, and actuator execution all consume time. A trajectory calculated from an old state can already be partially outdated when it reaches the controller. Practical systems should therefore maintain consistent timestamps, estimate relevant delays, and propagate vehicle and obstacle states appropriately so that the planner reasons about conditions corresponding to the actual execution time.
+
+Trajectory continuity remains important even during aggressive re-planning. Abruptly switching from one valid trajectory to another can create discontinuities in steering, acceleration, or jerk that are difficult for the controller to track. The planner can penalize deviation from the previous trajectory, constrain the initial segment of the new trajectory, or connect the current executed state smoothly to the new solution. Emergency conditions may override comfort requirements, but ordinary updates should preserve continuity whenever possible.
+
+Different trajectory-generation methods support dynamic re-planning in different ways. Polynomial planners can rapidly regenerate trajectories toward updated terminal states, while lattice planners can search alternative motion primitives when the current branch becomes blocked. MPPI can continuously resample control sequences using updated obstacle and state information. These methods can also be combined within hierarchical architectures according to the complexity and computational requirements of the operating environment.
+
+For sampling-based methods such as MPPI, the previous optimized control sequence can be shifted forward and reused as the nominal solution. New samples then explore alternatives around this updated sequence while incorporating current obstacle predictions and constraints. If conditions change only slightly, the optimizer can remain near the previous solution. If a major obstacle appears, high costs assigned to unsafe rollouts can redirect the sampled control distribution toward substantially different behavior.
+
+For lattice-based planning, dynamic changes can invalidate individual nodes or motion primitives without requiring the entire planning representation to be rebuilt. Edges intersecting newly occupied regions can be removed or assigned invalid status, while alternative branches remain available for search. Reusing graph structure and previous search information can reduce computational cost, particularly in structured environments where the underlying road or corridor geometry remains unchanged.
+
+Fallback behavior is necessary when normal trajectory generation cannot produce a feasible solution. The system should not force selection of an unsafe candidate simply because every available trajectory has high cost. Depending on the platform and situation, the appropriate response may be controlled deceleration, safe stopping, maintaining a protective standstill, or requesting higher-level route recovery. The absence of a feasible trajectory is itself an important planning result that must be communicated explicitly.
+
+Dynamic re-planning also requires coordination with the trajectory-tracking controller. The planner should provide a time-consistent trajectory containing position, heading, velocity, acceleration, curvature, and other required reference values. The controller should receive updated trajectories without interpreting every update as an unrelated command sequence. Clear interfaces between localization, prediction, planning, and control help preserve state consistency and reduce transient behavior during trajectory replacement.
+
+Outdoor multi-robot environments introduce additional complexity because other robots may simultaneously re-plan their own trajectories. Treating every robot as an independently moving obstacle can lead to conservative behavior, deadlocks, or repeated mutual avoidance. When communication infrastructure is available, planned routes, priorities, reservations, or intent information can support coordinated re-planning. Nevertheless, each robot should retain local safety capability when communication becomes unavailable or delayed.
+
+The effectiveness of dynamic re-planning should be evaluated through scenario-based testing rather than only through nominal driving. Useful scenarios include sudden obstacle appearance, unexpected pedestrian motion, blocked corridors, localization jumps, reduced friction, delayed perception, moving vehicles, and complete loss of a previously feasible path. Evaluation can measure collision avoidance, minimum clearance, stopping performance, planning latency, trajectory continuity, constraint violations, and recovery time.
+
+Dynamic re-planning under changing conditions therefore forms the feedback mechanism that keeps trajectory generation connected to the real world. Updated localization, perception, prediction, vehicle condition, and terrain information continuously modify the planning problem. By combining receding-horizon execution, warm starting, time-aware collision checking, feasibility validation, uncertainty margins, fallback behavior, and controller-consistent trajectory updates, an autonomous vehicle or outdoor AMR can adapt its motion while preserving safety, physical feasibility, and operational continuity.
+
+동적 재계획(Dynamic Re-Planning)은 운용 환경이 이전에 예측했던 상태와 달라질 때 자율주행차 또는 이동로봇이 자신의 궤적을 지속적으로 수정할 수 있도록 한다. 불과 몇 순간 전까지 안전하고 효율적이었던 궤적도 장애물이 이동하거나, 보행자가 나타나거나, 다른 로봇이 방향을 변경하거나, 위치추정 결과가 변화하거나, 지형 조건이 달라지면 더 이상 적합하지 않을 수 있다. 따라서 재계획(Re-Planning)은 궤적 생성을 일회성 계산이 아니라 지속적인 폐루프 과정(Closed-Loop Process)으로 취급한다.
+
+이 과정은 차량 상태와 주변 환경의 지속적인 갱신에서 시작된다. 위치추정(Localization)은 위치, 방향각 및 속도를 추정하고, 인지(Perception)는 정적 및 동적 객체, 자유 공간(Free Space), 도로 경계 및 관련 지형 특성을 식별한다. 예측 모듈(Prediction Module)은 이동 객체가 계획 지평선(Planning Horizon) 동안 어떻게 변화할지를 추정한다. 이렇게 갱신된 관측 정보는 이전 궤적 생성 주기에서 사용한 가정과 크게 달라질 수 있는 새로운 계획 상황(Planning Context)을 구성한다.
+
+실용적인 아키텍처는 일반적으로 이동 지평선 원리(Receding-Horizon Principle)를 따른다. 계획기는 유한한 미래 지평선에 대한 궤적을 생성하지만 그 초기 부분만 실행한다. 전체 궤적을 모두 추종하기 전에 새로운 위치추정, 인지 및 예측 정보가 제공되고 다음 계획 주기가 시작된다. 이러한 지평선을 반복적으로 앞으로 이동시키면 미래 차량 운동에 대한 선행 예측 표현을 유지하면서 환경 변화에 따라 궤적을 지속적으로 변경할 수 있다.
+
+이전에 선택된 궤적은 다음 계획 주기에 중요한 기준을 제공한다. 매 갱신마다 완전히 관련 없는 해에서 재계획을 시작하면 불안정하거나 진동성 운동(Oscillatory Motion)이 발생할 수 있다. 대신 이전 궤적의 남은 부분을 앞으로 이동시켜 초기 추정값(Initial Guess), 명목 궤적(Nominal Trajectory) 또는 일관성 기준(Consistency Reference)으로 사용할 수 있다. 이러한 웜 스타트(Warm Start) 전략은 계산량을 줄이고 시간적 연속성을 향상시키면서도 새로운 조건이 요구하는 경우에는 큰 궤적 변경을 허용한다.
+
+동적 장애물(Dynamic Obstacle)의 변화는 궤적 수정이 필요한 가장 일반적인 원인 중 하나이다. 계획된 주행 통로로 진입하는 차량, 경로를 횡단하는 보행자 또는 예상하지 못하게 감속하는 다른 AMR은 현재 궤적을 무효화할 수 있다. 계획기는 예측된 장애물 상태와 자차 궤적(Ego Trajectory)을 해당 미래 시간에 맞추어 비교해야 한다. 상황에 따라 새로운 해는 속도를 줄이거나, 정지하거나, 횡방향 위치를 변경하거나, 국부적으로 실행 가능한 다른 경로를 선택할 수 있다.
+
+정적 환경 변화(Static Environmental Change) 역시 재계획을 요구할 수 있다. 공사 방호벽, 일시적으로 차단된 통로, 주차된 차량, 낙하물 또는 새롭게 감지된 도로 경계는 이전에 이용 가능했던 공간을 사용할 수 없게 만들 수 있다. 동적 장애물과 달리 이러한 변화는 장시간 지속될 수 있으며 국부 경로(Local Route)의 더 큰 수정을 요구할 수 있다. 국부 계획기(Local Planner)가 실행 가능한 궤적을 찾지 못하는 경우 시스템은 전역 계획 계층(Global Planning Layer)에 새로운 경로를 요청해야 할 수 있다.
+
+위치추정 변화(Localization Change)는 궤적이 무효화되는 또 다른 원인이다. 향상된 센서 관측으로 인해 지도 또는 기준 경로에 대한 차량의 추정 자세(Pose)가 변경될 수 있다. 작은 보정이라도 횡방향 오프셋(Lateral Offset), 방향각 오차, 장애물 여유거리 및 예상 추종 거동에 영향을 줄 수 있다. 따라서 계획기는 차량이 이전에 예측된 운동 위에 정확히 위치한다고 가정하기보다 최신 상태 추정값을 이용하여 궤적을 다시 생성하거나 조정해야 한다.
+
+차량 상태(Vehicle Condition) 역시 운용 중에 변화할 수 있다. 페이로드 변화, 배터리 상태, 액추에이터 온도, 타이어 또는 휠 거동, 제동 능력 및 조향 성능은 실행 가능한 운동 영역(Feasible Motion Envelope)을 변화시킬 수 있다. 무거운 페이로드는 더 낮은 가속도와 더 큰 정지 여유거리를 요구할 수 있으며, 접지력 저하는 허용 가능한 횡가속도를 감소시킬 수 있다. 따라서 동적 재계획은 차량의 실행 가능성에 실질적인 영향을 주는 경우 갱신된 플랫폼 제약조건을 사용해야 한다.
+
+지형 의존적 조건(Terrain-Dependent Condition)은 야외 자율이동로봇(Outdoor AMR)에서 특히 중요하다. 비, 느슨한 자갈, 진흙, 불균일한 노면, 경사 또는 새롭게 감지된 거친 지형은 접지력과 안정성 요구조건을 변화시킬 수 있다. 정상적인 조건에서 실행 가능했던 궤적도 마찰력이 감소하거나 지형 거칠기가 증가하면 안전하지 않을 수 있다. 계획기는 이에 대응하여 속도를 낮추고, 곡률을 제한하고, 장애물 여유거리를 증가시키거나, 주행 가능성이 더 높은 경로 구간을 선택할 수 있다.
+
+재계획은 작은 궤적 보정(Minor Trajectory Correction)과 큰 기동 변경(Major Maneuver Change)을 구분해야 한다. 작은 편차는 기존 경로를 유지하면서 속도, 곡률 또는 횡방향 오프셋을 조정하여 처리할 수 있다. 보다 중요한 상황에서는 정지, 추월, 통로 변경, 후진 또는 전역 경로 변경 요청이 필요할 수 있다. 계층적 계획 아키텍처(Hierarchical Planning Architecture)는 국부 궤적 적응과 경로 수준의 의사결정을 분리하여 모든 환경 변화가 불필요하게 전체 전역 재계획(Global Re-Plan)을 유발하지 않도록 한다.
+
+의미 있는 갱신이 발생할 때마다 궤적 실행 가능성(Trajectory Feasibility)을 다시 검사해야 한다. 새롭게 생성된 후보 궤적은 속도, 가속도, 저크(Jerk), 곡률(Curvature), 조향, 제동, 충돌, 지형 및 차량 외곽 형상(Vehicle Footprint) 제약조건을 만족해야 한다. 이전에 실행 가능했던 궤적이라도 기하학적 형상이 변하지 않았다는 이유만으로 계속 실행 가능하다고 가정해서는 안 된다. 갱신된 차량 상태와 환경 조건이 동일한 명목 궤적의 물리적 유효성을 변화시킬 수 있기 때문이다.
+
+동적 재계획에서 충돌 검사(Collision Checking)는 시간 정보를 고려해야 한다. 계획기는 예측된 자차 위치 및 차량 외곽 형상을 동일한 미래 타임스탬프에 해당하는 예측 장애물 상태와 비교해야 한다. 이를 통해 현재는 기하학적으로 점유되어 있지만 이후 비워질 경로와, 현재는 비어 있지만 이후 점유될 경로를 구분할 수 있다. 시간 의존적 평가(Time-Dependent Evaluation)는 감속, 대기, 장애물보다 먼저 통과 또는 다른 경로 선택과 같은 의사결정을 지원한다.
+
+예측 불확실성(Prediction Uncertainty)은 재계획 전략에 영향을 주어야 한다. 보행자, 차량 및 다른 로봇의 미래 운동은 특히 긴 지평선에서 정확하게 알 수 없다. 계획기는 확대된 안전 영역(Enlarged Safety Region), 확률적 예측(Probabilistic Prediction), 복수의 운동 가설(Multiple Motion Hypotheses) 또는 보수적인 제약조건을 통해 불확실성을 표현할 수 있다. 불확실성이 증가하면 하나의 결정론적 예측에 의존하기보다 속도를 줄이거나 추가적인 기동 공간을 확보할 수 있다.
+
+재계획 주파수(Re-Planning Frequency)는 차량 동역학과 환경 변화 속도에 따라 선택해야 한다. 빠른 계획 갱신은 반응성을 향상시키지만 계산 요구량을 증가시키고 잡음이 포함된 인지 정보에 대한 민감도를 높일 수 있다. 느린 갱신은 계산량을 줄일 수 있지만 빠르게 변화하는 상황에 너무 늦게 반응할 수 있다. 적절한 주파수는 운용 속도, 정지거리, 센서 갱신 주기, 제어기 대역폭(Controller Bandwidth), 예측 지평선 및 이용 가능한 계산 자원에 따라 결정된다.
+
+지연시간(Latency)은 명목상의 계획 주파수만큼 중요하다. 센서 획득, 인지, 예측, 최적화, 통신 및 액추에이터 실행에는 모두 시간이 필요하다. 오래된 상태를 기준으로 계산된 궤적은 제어기에 도달하는 순간 이미 일부가 유효하지 않을 수 있다. 따라서 실제 시스템은 일관된 타임스탬프(Timestamp)를 유지하고 관련 지연시간을 추정하며 차량과 장애물 상태를 적절하게 전파하여 계획기가 실제 실행 시점에 대응하는 조건을 기준으로 판단하도록 해야 한다.
+
+공격적인 재계획이 필요한 상황에서도 궤적 연속성(Trajectory Continuity)은 중요하다. 하나의 유효한 궤적에서 다른 유효한 궤적으로 갑자기 전환하면 조향, 가속도 또는 저크의 불연속이 발생하여 제어기가 이를 추종하기 어려울 수 있다. 계획기는 이전 궤적으로부터의 편차에 페널티를 부여하거나, 새로운 궤적의 초기 구간을 제한하거나, 현재 실행 상태에서 새로운 해까지 부드럽게 연결할 수 있다. 비상 상황에서는 승차감 요구사항보다 안전이 우선될 수 있지만 일반적인 갱신에서는 가능한 한 연속성을 유지해야 한다.
+
+서로 다른 궤적 생성 방법(Trajectory-Generation Method)은 동적 재계획을 서로 다른 방식으로 지원한다. 다항식 계획기(Polynomial Planner)는 갱신된 종단 상태를 향해 궤적을 빠르게 재생성할 수 있으며, 격자 계획기(Lattice Planner)는 현재 분기가 차단되었을 때 대체 모션 프리미티브(Motion Primitive)를 탐색할 수 있다. MPPI(Model Predictive Path Integral)는 갱신된 장애물 및 상태 정보를 이용하여 제어 시퀀스를 지속적으로 다시 샘플링할 수 있다. 이러한 방법은 운용 환경의 복잡도와 계산 요구사항에 따라 계층적 아키텍처에서 결합할 수도 있다.
+
+MPPI와 같은 샘플링 기반 방법(Sampling-Based Method)에서는 이전에 최적화된 제어 시퀀스를 앞으로 이동시켜 명목 해(Nominal Solution)로 재사용할 수 있다. 새로운 샘플은 현재 장애물 예측 및 제약조건을 반영하면서 이 갱신된 시퀀스 주변의 대안을 탐색한다. 조건이 조금만 변화한 경우 최적화기는 이전 해 주변에 머무를 수 있다. 반면 큰 장애물이 새롭게 나타나면 안전하지 않은 롤아웃(Rollout)에 높은 비용을 부여하여 샘플링된 제어 분포를 크게 다른 행동 방향으로 전환할 수 있다.
+
+격자 기반 계획(Lattice-Based Planning)에서는 동적 변화가 전체 계획 표현을 다시 구성하지 않고도 개별 노드 또는 모션 프리미티브를 무효화할 수 있다. 새롭게 점유된 영역과 교차하는 엣지(Edge)를 제거하거나 무효 상태로 지정하면서 다른 대체 분기들은 계속 탐색에 사용할 수 있다. 그래프 구조와 이전 탐색 정보를 재사용하면 특히 기본 도로 또는 통로의 기하학적 구조가 변하지 않는 구조화된 환경(Structured Environment)에서 계산 비용을 줄일 수 있다.
+
+정상적인 궤적 생성으로 실행 가능한 해를 만들 수 없는 경우를 대비하여 폴백 동작(Fallback Behavior)이 필요하다. 이용 가능한 모든 궤적의 비용이 높다는 이유만으로 시스템이 안전하지 않은 후보를 강제로 선택해서는 안 된다. 플랫폼과 상황에 따라 적절한 대응은 제어된 감속(Controlled Deceleration), 안전 정지(Safe Stop), 보호 정지 상태(Protective Standstill) 유지 또는 상위 수준 경로 복구(Higher-Level Route Recovery) 요청이 될 수 있다. 실행 가능한 궤적이 존재하지 않는다는 사실 자체가 명시적으로 전달되어야 하는 중요한 계획 결과이다.
+
+동적 재계획은 궤적 추종 제어기(Trajectory-Tracking Controller)와의 협조도 필요하다. 계획기는 위치, 방향각, 속도, 가속도, 곡률 및 기타 필요한 기준값을 포함하는 시간적으로 일관된 궤적을 제공해야 한다. 제어기는 갱신되는 각각의 궤적을 서로 완전히 무관한 명령 시퀀스로 해석해서는 안 된다. 위치추정, 예측, 계획 및 제어 사이의 명확한 인터페이스는 상태 일관성(State Consistency)을 유지하고 궤적 교체 과정에서 발생하는 과도 응답(Transient Behavior)을 줄이는 데 도움이 된다.
+
+야외 다중 로봇 환경(Outdoor Multi-Robot Environment)은 다른 로봇들도 동시에 자신의 궤적을 재계획할 수 있기 때문에 추가적인 복잡성을 발생시킨다. 모든 로봇을 독립적으로 이동하는 장애물로만 취급하면 지나치게 보수적인 행동, 교착상태(Deadlock) 또는 반복적인 상호 회피가 발생할 수 있다. 통신 인프라가 사용 가능한 경우 계획 경로, 우선순위, 예약(Reservation) 또는 의도 정보(Intent Information)를 이용하여 협조적 재계획(Coordinated Re-Planning)을 지원할 수 있다. 그러나 통신이 불가능하거나 지연되는 상황에서도 각 로봇은 국부적인 안전 기능을 유지해야 한다.
+
+동적 재계획의 효과는 정상적인 주행만으로 평가하기보다 시나리오 기반 시험(Scenario-Based Testing)을 통해 검증해야 한다. 유용한 시나리오에는 갑작스러운 장애물 출현, 예상하지 못한 보행자 이동, 차단된 통로, 위치추정 점프(Localization Jump), 마찰력 감소, 인지 지연, 이동 차량 및 기존의 실행 가능한 경로가 완전히 상실되는 상황 등이 포함된다. 평가 항목으로는 충돌 회피, 최소 여유거리, 정지 성능, 계획 지연시간, 궤적 연속성, 제약조건 위반 및 복구 시간(Recovery Time)을 사용할 수 있다.
+
+따라서 변화하는 조건에서의 동적 재계획(Dynamic Re-Planning Under Changing Conditions)은 궤적 생성을 실제 환경과 지속적으로 연결하는 피드백 메커니즘(Feedback Mechanism)을 형성한다. 갱신된 위치추정, 인지, 예측, 차량 상태 및 지형 정보는 계획 문제를 지속적으로 변화시킨다. 이동 지평선 실행, 웜 스타트, 시간 인식 충돌 검사(Time-Aware Collision Checking), 실행 가능성 검증, 불확실성 여유(Uncertainty Margin), 폴백 동작 및 제어기와 일관된 궤적 갱신을 결합함으로써 자율주행차 또는 야외 AMR은 안전성, 물리적 실행 가능성 및 운용 연속성을 유지하면서 자신의 운동을 변화하는 환경에 적응시킬 수 있다.
+
+##  
+
+## 07.09. Trajectory Tracking Controller Integration [w/Code]
+
+![](images/image9.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+Trajectory tracking controller integration connects the trajectory-generation layer with the physical actuators that ultimately move the vehicle. A planner may generate a collision-free, dynamically feasible, and smooth trajectory, but successful autonomous motion depends on whether the control system can reproduce that trajectory under real operating conditions. Integration therefore requires consistent interfaces between planned states, vehicle-state estimation, controller commands, actuator limits, and feedback measurements.
+
+A trajectory normally contains time-indexed reference states describing position, heading, velocity, acceleration, curvature, and sometimes steering or yaw-rate targets. The tracking controller compares these references with the estimated vehicle state and calculates commands that reduce the resulting errors. Depending on the platform, outputs may include steering angle, steering rate, wheel velocity, longitudinal acceleration, motor torque, braking demand, or differential wheel commands.
+
+The interface between planner and controller must define reference quantities precisely. Coordinate frames, units, sign conventions, timestamps, trajectory sampling intervals, vehicle reference points, and state definitions must remain consistent across software modules. A trajectory expressed at the rear axle center, for example, cannot be interpreted as a vehicle-center trajectory without transformation. Interface inconsistency can produce tracking errors even when the planner and controller operate correctly in isolation.
+
+Time synchronization is equally important because trajectory tracking is inherently time dependent. The controller must know which reference state corresponds to the current execution time rather than simply selecting the nearest geometric point. Sensor processing, communication, planning, and actuator commands introduce latency, so the reference may need interpolation or time compensation. Accurate timestamps help ensure that the controller tracks the intended future state instead of an outdated trajectory sample.
+
+State estimation provides the feedback required for closed-loop tracking. Localization supplies position and heading, while wheel encoders, inertial sensors, steering sensors, and other vehicle signals can provide velocity, yaw rate, acceleration, and actuator state. The controller continuously compares this estimated state with the reference trajectory. Reliable tracking therefore depends not only on controller design but also on the accuracy, update rate, and temporal consistency of the underlying state estimator.
+
+Tracking error can be represented in several forms. Cross-track error measures lateral displacement from the reference trajectory, heading error measures orientation difference, and longitudinal error describes progress mismatch along the trajectory. Velocity and acceleration errors may also be evaluated. Using a path-relative or Frenet representation can simplify these relationships by separating longitudinal progress from lateral deviation, particularly for road-following and structured AMR applications.
+
+A basic trajectory-tracking architecture may use geometric controllers such as Pure Pursuit or Stanley control. Pure Pursuit selects a look-ahead target on the reference path and computes steering that guides the vehicle toward that point. Stanley control combines heading error with cross-track error. These methods are computationally efficient and useful for many low- and moderate-speed applications, although their performance depends strongly on tuning, speed, path curvature, and vehicle dynamics.
+
+Feedback control can also be formulated using proportional, integral, and derivative terms or state-space methods. A PID-based speed controller can regulate longitudinal velocity while a separate lateral controller manages steering. Linear Quadratic Regulator (LQR) approaches use a vehicle model and weighted state errors to compute control actions. Such architectures allow systematic treatment of multiple tracking errors, but their performance depends on the validity of the model and the operating range around which it is formulated.
+
+Model Predictive Control (MPC) provides a more integrated approach by predicting future vehicle behavior over a finite horizon and optimizing control commands subject to constraints. Steering, acceleration, actuator limits, and tracking objectives can be considered simultaneously. MPC is especially useful when trajectory tracking must account for coupled vehicle dynamics, although its computational requirements are higher than those of simpler geometric or feedback controllers.
+
+The trajectory generator should produce references that match the controller\'s capabilities. If the planner generates curvature changes faster than the steering actuator can follow, the trajectory may be mathematically feasible but practically untrackable. Similarly, aggressive velocity transitions can exceed motor or braking response. Controller-aware trajectory generation therefore incorporates steering rate, acceleration, jerk, actuator delay, and other execution constraints before the trajectory reaches the tracking layer.
+
+Feedforward control can improve tracking when the trajectory already contains useful dynamic information. Reference curvature can be converted into an expected steering command, while reference acceleration can provide a nominal longitudinal command. Feedback then compensates for modeling error, disturbances, and state-estimation error. Combining feedforward and feedback reduces the burden on error correction and can improve tracking during predictable curves, acceleration, and deceleration.
+
+Actuator interfaces require explicit saturation handling. Steering angle, steering rate, wheel speed, motor torque, acceleration, and braking commands all have physical limits. A controller that requests commands outside these limits cannot reproduce the planned motion, and repeated saturation can cause growing tracking error. The control architecture should therefore clamp commands safely, report saturation conditions, and allow the planning layer to react when actuator limitations persist.
+
+Control allocation becomes important when the platform contains multiple independently controlled actuators. Differential-drive and skid-steer robots must convert desired linear and angular motion into left and right wheel commands. Four-wheel or six-wheel platforms may require torque distribution across several motors, while steering vehicles may coordinate propulsion, steering, and braking. The allocation layer translates high-level trajectory-tracking commands into actuator-specific references while respecting hardware constraints.
+
+Tracking behavior changes with speed and terrain. Controller gains or look-ahead distances suitable for low-speed maneuvering may produce poor performance at higher speeds. Rough terrain, slope, wheel slip, changing friction, and payload variation can further alter vehicle response. Gain scheduling, adaptive parameters, or model updates can therefore be used to adjust tracking behavior according to operating speed, terrain condition, payload, and available traction.
+
+For heavy outdoor AMRs, payload dynamics deserve particular attention. Increased mass changes acceleration and braking response, while a high center of gravity can increase sensitivity to lateral acceleration and abrupt steering. Flexible or moving payloads can introduce additional oscillation. The controller and planner should consequently share relevant operating limits so that trajectory tracking does not demand motion that compromises payload stability or vehicle controllability.
+
+Trajectory updates must be handled without creating command discontinuities. In a receding-horizon system, the planner may deliver a new trajectory many times per second. Immediately switching to a reference with substantially different steering or acceleration can create transient control behavior. The new trajectory should therefore begin consistently from the current executed state, and interpolation, blending, warm starting, or continuity constraints can be used when replacing the previous reference.
+
+Dynamic re-planning and tracking control form two nested feedback loops. The tracking controller reacts rapidly to short-term deviation from the selected trajectory, while the planner responds to larger changes in obstacles, route conditions, terrain, and vehicle state. The controller should not attempt to compensate indefinitely for a trajectory that has become infeasible, and the planner should not re-plan unnecessarily for small errors that the controller can safely correct.
+
+Tracking performance can also provide feedback to trajectory planning. Persistent cross-track error, steering saturation, excessive control effort, wheel slip, or inability to achieve the requested acceleration can indicate that the current trajectory exceeds practical vehicle capability. These signals can be returned to the planner so that future trajectories use reduced speed, smoother curvature, larger margins, or modified dynamic constraints.
+
+Safety supervision should remain independent of normal tracking objectives. If localization becomes invalid, actuator feedback is lost, tracking error exceeds an allowable bound, or the trajectory is no longer safe, the system may need to reject normal controller commands and transition to a fallback state. Depending on the platform, this can involve controlled deceleration, safe stopping, emergency braking, or handing authority to a dedicated safety controller.
+
+The planner-controller interface should therefore include more than trajectory coordinates. Useful information can include trajectory validity time, sequence identifier, operating mode, desired speed, curvature, acceleration, expected completion state, and validity or safety status. The controller can return tracking errors, actuator saturation, execution state, faults, and completion information. This bidirectional contract makes the integration observable and supports diagnosis during simulation and field operation.
+
+Trajectory interpolation is required when planner and controller frequencies differ. A planner may update at a moderate rate while the controller executes at a substantially higher rate. The controller can interpolate position, heading, velocity, curvature, and other references between trajectory samples. Interpolation should preserve trajectory continuity and angular consistency so that higher control frequency does not introduce artificial discontinuities into the reference signal.
+
+Loss of a valid trajectory must have deterministic behavior. The controller should not continue following stale references indefinitely when planner updates stop or trajectory timestamps expire. A watchdog or validity mechanism can detect missing, delayed, or invalid trajectory data. The system can then transition to a predefined fallback behavior, such as maintaining a safe short-term command followed by controlled deceleration and stopping.
+
+Simulation provides an effective environment for validating planner-controller integration before physical testing. Scenarios can introduce trajectory curvature changes, actuator delay, localization noise, wheel slip, payload variation, communication latency, and sudden re-planning. Engineers can measure cross-track error, heading error, velocity error, control saturation, settling behavior, overshoot, and trajectory-switching response before exposing the physical platform to equivalent conditions.
+
+Real-vehicle validation should progressively expand the operating envelope. Initial testing can use low speeds and simple trajectories before introducing tighter curvature, higher velocity, heavier payloads, rough terrain, dynamic obstacles, and frequent re-planning. Logged reference states, estimated states, controller outputs, actuator feedback, timestamps, and safety events allow tracking failures to be traced across the complete planning and control pipeline.
+
+A well-integrated trajectory tracking system therefore operates as a continuous information loop rather than a one-directional planner-to-controller connection. The planner generates executable time-indexed motion, the controller converts that motion into actuator commands, the vehicle responds physically, state estimation measures the resulting behavior, and tracking performance feeds back into both control and planning. Consistent interfaces, synchronization, actuator-aware planning, feedback supervision, and deterministic fallback behavior allow trajectory generation to become reliable physical motion.
+
+궤적 추종 제어기 통합(Trajectory Tracking Controller Integration)은 궤적 생성 계층(Trajectory-Generation Layer)과 차량을 실제로 움직이는 물리적 액추에이터(Physical Actuator)를 연결한다. 계획기가 충돌이 없고 동역학적으로 실행 가능하며 부드러운 궤적을 생성하더라도, 성공적인 자율주행 운동은 실제 운용 조건에서 제어 시스템이 해당 궤적을 얼마나 정확하게 재현할 수 있는지에 달려 있다. 따라서 통합 과정에서는 계획 상태, 차량 상태 추정, 제어기 명령, 액추에이터 한계 및 피드백 측정 사이에 일관된 인터페이스가 필요하다.
+
+궤적은 일반적으로 위치(Position), 방향각(Heading), 속도(Velocity), 가속도(Acceleration), 곡률(Curvature), 그리고 경우에 따라 조향 또는 요율(Yaw Rate) 목표를 나타내는 시간 인덱스 기반 기준 상태(Time-Indexed Reference State)를 포함한다. 추종 제어기(Tracking Controller)는 이러한 기준값과 추정된 차량 상태를 비교하여 발생한 오차를 감소시키는 명령을 계산한다. 플랫폼에 따라 출력에는 조향각, 조향률, 휠 속도, 종방향 가속도, 모터 토크, 제동 요구량 또는 차동 휠 명령이 포함될 수 있다.
+
+계획기와 제어기 사이의 인터페이스는 기준 물리량을 명확하게 정의해야 한다. 좌표계(Coordinate Frame), 단위(Unit), 부호 규약(Sign Convention), 타임스탬프(Timestamp), 궤적 샘플링 간격, 차량 기준점(Vehicle Reference Point) 및 상태 정의가 소프트웨어 모듈 전체에서 일관되게 유지되어야 한다. 예를 들어 후륜 차축 중심(Rear Axle Center)을 기준으로 표현된 궤적은 좌표 변환 없이 차량 중심 궤적으로 해석해서는 안 된다. 인터페이스의 불일치는 계획기와 제어기가 각각 독립적으로 정상 동작하더라도 추종 오차를 발생시킬 수 있다.
+
+시간 동기화(Time Synchronization) 역시 중요하다. 궤적 추종은 본질적으로 시간에 의존하기 때문이다. 제어기는 단순히 기하학적으로 가장 가까운 점을 선택하는 것이 아니라 현재 실행 시간에 대응하는 기준 상태를 알아야 한다. 센서 처리, 통신, 계획 및 액추에이터 명령에는 지연시간(Latency)이 발생하므로 기준값에 보간(Interpolation) 또는 시간 보상(Time Compensation)이 필요할 수 있다. 정확한 타임스탬프는 제어기가 오래된 궤적 샘플이 아니라 의도된 미래 상태를 추종하도록 하는 데 도움을 준다.
+
+상태 추정(State Estimation)은 폐루프 추종(Closed-Loop Tracking)에 필요한 피드백을 제공한다. 위치추정(Localization)은 위치와 방향각을 제공하고, 휠 인코더(Wheel Encoder), 관성 센서(Inertial Sensor), 조향 센서 및 기타 차량 신호는 속도, 요율, 가속도 및 액추에이터 상태를 제공할 수 있다. 제어기는 이러한 추정 상태와 기준 궤적을 지속적으로 비교한다. 따라서 신뢰성 있는 추종은 제어기 설계뿐만 아니라 기반 상태 추정기의 정확도, 갱신 주기 및 시간적 일관성에도 의존한다.
+
+추종 오차(Tracking Error)는 여러 형태로 표현할 수 있다. 횡방향 오차(Cross-Track Error)는 기준 궤적으로부터의 횡방향 변위를 측정하고, 방향각 오차(Heading Error)는 자세 방향의 차이를 측정하며, 종방향 오차(Longitudinal Error)는 궤적을 따른 진행 정도의 차이를 나타낸다. 속도 및 가속도 오차도 평가할 수 있다. 경로 상대 좌표계(Path-Relative Coordinate) 또는 프레네 표현(Frenet Representation)을 사용하면 종방향 진행과 횡방향 편차를 분리할 수 있어 도로 추종 및 구조화된 AMR 응용에서 이러한 관계를 단순화할 수 있다.
+
+기본적인 궤적 추종 아키텍처에서는 퓨어 퍼슈트(Pure Pursuit) 또는 스탠리 제어(Stanley Control)와 같은 기하학적 제어기(Geometric Controller)를 사용할 수 있다. 퓨어 퍼슈트는 기준 경로상의 전방 주시 목표점(Look-Ahead Target)을 선택하고 차량이 해당 지점을 향하도록 조향값을 계산한다. 스탠리 제어는 방향각 오차와 횡방향 오차를 결합한다. 이러한 방법은 계산 효율성이 높아 많은 저속 및 중속 응용에 유용하지만, 성능은 튜닝, 속도, 경로 곡률 및 차량 동역학에 크게 의존한다.
+
+피드백 제어(Feedback Control)는 비례(Proportional), 적분(Integral), 미분(Derivative) 항이나 상태공간(State-Space) 방법을 이용하여 구성할 수도 있다. PID 기반 속도 제어기는 종방향 속도를 조절하고 별도의 횡방향 제어기가 조향을 관리할 수 있다. 선형 이차 조절기(Linear Quadratic Regulator, LQR)는 차량 모델과 가중된 상태 오차를 이용하여 제어 입력을 계산한다. 이러한 아키텍처는 여러 추종 오차를 체계적으로 처리할 수 있지만 성능은 모델의 유효성과 모델이 구성된 운용 범위에 의존한다.
+
+모델 예측 제어(Model Predictive Control, MPC)는 유한한 지평선(Finite Horizon)에서 미래 차량 거동을 예측하고 제약조건을 만족하도록 제어 명령을 최적화함으로써 보다 통합적인 접근법을 제공한다. 조향, 가속도, 액추에이터 한계 및 추종 목표를 동시에 고려할 수 있다. MPC는 궤적 추종에서 서로 결합된 차량 동역학(Coupled Vehicle Dynamics)을 고려해야 할 때 특히 유용하지만, 단순한 기하학적 또는 피드백 제어기보다 더 많은 계산 자원을 요구한다.
+
+궤적 생성기는 제어기의 능력과 일치하는 기준값을 생성해야 한다. 계획기가 조향 액추에이터가 추종할 수 있는 속도보다 빠른 곡률 변화를 생성한다면 해당 궤적은 수학적으로 실행 가능하더라도 실제로는 추종하기 어려울 수 있다. 마찬가지로 급격한 속도 변화는 모터 또는 제동 시스템의 응답 능력을 초과할 수 있다. 따라서 제어기 인식 궤적 생성(Controller-Aware Trajectory Generation)은 궤적이 추종 계층에 전달되기 전에 조향률, 가속도, 저크(Jerk), 액추에이터 지연 및 기타 실행 제약조건을 고려한다.
+
+피드포워드 제어(Feedforward Control)는 궤적에 유용한 동적 정보가 이미 포함되어 있을 때 추종 성능을 향상시킬 수 있다. 기준 곡률은 예상 조향 명령으로 변환할 수 있고, 기준 가속도는 명목 종방향 제어 명령을 제공할 수 있다. 이후 피드백(Feedback)은 모델링 오차, 외란 및 상태 추정 오차를 보상한다. 피드포워드와 피드백을 결합하면 오차 보정에 대한 부담을 줄이고 예측 가능한 곡선 주행, 가속 및 감속 과정에서 추종 성능을 향상시킬 수 있다.
+
+액추에이터 인터페이스(Actuator Interface)에서는 명시적인 포화 처리(Saturation Handling)가 필요하다. 조향각, 조향률, 휠 속도, 모터 토크, 가속도 및 제동 명령에는 모두 물리적 한계가 존재한다. 이러한 한계를 초과하는 명령을 제어기가 요구하면 계획된 운동을 재현할 수 없으며, 반복적인 포화는 추종 오차를 증가시킬 수 있다. 따라서 제어 아키텍처는 명령을 안전하게 제한하고 포화 상태를 보고하며, 액추에이터 한계가 지속될 경우 계획 계층이 이에 대응할 수 있도록 해야 한다.
+
+플랫폼에 독립적으로 제어되는 여러 액추에이터가 존재하는 경우 제어 할당(Control Allocation)이 중요해진다. 차동 구동(Differential Drive) 및 스키드 스티어(Skid-Steer) 로봇은 원하는 선속도와 각속도를 좌우 휠 명령으로 변환해야 한다. 4륜 또는 6륜 플랫폼에서는 여러 모터에 대한 토크 분배가 필요할 수 있으며, 조향 차량에서는 추진, 조향 및 제동을 서로 조정해야 할 수 있다. 제어 할당 계층은 하드웨어 제약조건을 준수하면서 상위 수준의 궤적 추종 명령을 액추에이터별 기준값으로 변환한다.
+
+추종 거동은 속도와 지형에 따라 달라진다. 저속 기동에 적합한 제어기 게인(Controller Gain)이나 전방 주시 거리(Look-Ahead Distance)는 고속에서 좋지 않은 성능을 나타낼 수 있다. 거친 지형, 경사, 휠 슬립, 변화하는 마찰 및 페이로드 변화는 차량 응답을 추가적으로 변화시킬 수 있다. 따라서 게인 스케줄링(Gain Scheduling), 적응형 파라미터(Adaptive Parameter) 또는 모델 갱신을 이용하여 운용 속도, 지형 상태, 페이로드 및 이용 가능한 접지력에 따라 추종 거동을 조정할 수 있다.
+
+중량 야외 자율이동로봇(Outdoor AMR)에서는 페이로드 동역학(Payload Dynamics)을 특히 주의해야 한다. 질량 증가는 가속 및 제동 응답을 변화시키고, 높은 무게중심(Center of Gravity)은 횡가속도와 급격한 조향에 대한 민감성을 증가시킬 수 있다. 유연하거나 이동 가능한 페이로드는 추가적인 진동을 발생시킬 수 있다. 따라서 제어기와 계획기는 관련 운용 한계를 공유하여 궤적 추종이 페이로드 안정성 또는 차량 제어 가능성을 저해하는 운동을 요구하지 않도록 해야 한다.
+
+궤적 갱신(Trajectory Update)은 명령 불연속(Command Discontinuity)을 발생시키지 않도록 처리해야 한다. 이동 지평선 시스템(Receding-Horizon System)에서는 계획기가 초당 여러 차례 새로운 궤적을 전달할 수 있다. 이전 궤적과 조향 또는 가속도가 크게 다른 기준값으로 즉시 전환하면 과도 제어 응답(Transient Control Behavior)이 발생할 수 있다. 따라서 새로운 궤적은 현재 실행 상태에서 일관되게 시작해야 하며, 이전 기준을 교체할 때 보간, 블렌딩(Blending), 웜 스타트(Warm Start) 또는 연속성 제약조건(Continuity Constraint)을 사용할 수 있다.
+
+동적 재계획(Dynamic Re-Planning)과 추종 제어(Tracking Control)는 서로 중첩된 두 개의 피드백 루프(Nested Feedback Loops)를 형성한다. 추종 제어기는 선택된 궤적에서 발생하는 단기적인 편차에 빠르게 대응하고, 계획기는 장애물, 경로 조건, 지형 및 차량 상태의 더 큰 변화에 대응한다. 제어기는 더 이상 실행 가능하지 않은 궤적을 무한정 보상하려고 해서는 안 되며, 계획기는 제어기가 안전하게 보정할 수 있는 작은 오차 때문에 불필요하게 재계획을 수행해서는 안 된다.
+
+추종 성능(Tracking Performance)은 궤적 계획에 대한 피드백으로도 활용할 수 있다. 지속적인 횡방향 오차, 조향 포화, 과도한 제어 노력(Control Effort), 휠 슬립 또는 요구된 가속도를 달성하지 못하는 상황은 현재 궤적이 차량의 실제 능력을 초과하고 있음을 나타낼 수 있다. 이러한 신호를 계획기에 다시 전달하면 이후 궤적에서 속도를 낮추고, 곡률을 부드럽게 하며, 더 큰 여유거리를 적용하거나, 동적 제약조건을 수정할 수 있다.
+
+안전 감독(Safety Supervision)은 일반적인 추종 목표와 독립적으로 유지되어야 한다. 위치추정이 유효하지 않게 되거나, 액추에이터 피드백이 손실되거나, 추종 오차가 허용 한계를 초과하거나, 궤적이 더 이상 안전하지 않은 경우 시스템은 정상적인 제어기 명령을 거부하고 폴백 상태(Fallback State)로 전환해야 할 수 있다. 플랫폼에 따라 제어된 감속(Controlled Deceleration), 안전 정지(Safe Stop), 비상 제동(Emergency Braking) 또는 전용 안전 제어기(Dedicated Safety Controller)로 제어 권한을 넘기는 방식이 사용될 수 있다.
+
+따라서 계획기-제어기 인터페이스(Planner-Controller Interface)는 단순한 궤적 좌표 이상의 정보를 포함해야 한다. 유용한 정보에는 궤적 유효 시간(Trajectory Validity Time), 시퀀스 식별자(Sequence Identifier), 운용 모드, 목표 속도, 곡률, 가속도, 예상 완료 상태 및 유효성 또는 안전 상태가 포함될 수 있다. 제어기는 추종 오차, 액추에이터 포화, 실행 상태, 고장 및 완료 정보를 반환할 수 있다. 이러한 양방향 계약(Bidirectional Contract)은 통합 시스템의 관측 가능성(Observability)을 높이고 시뮬레이션과 실제 운용 중 진단을 지원한다.
+
+계획기와 제어기의 실행 주파수가 서로 다른 경우 궤적 보간(Trajectory Interpolation)이 필요하다. 계획기는 중간 수준의 주기로 갱신되는 반면 제어기는 훨씬 높은 주기로 실행될 수 있다. 제어기는 궤적 샘플 사이의 위치, 방향각, 속도, 곡률 및 기타 기준값을 보간할 수 있다. 이러한 보간은 궤적의 연속성과 각도 일관성(Angular Consistency)을 유지해야 하며, 높은 제어 주파수로 인해 기준 신호에 인위적인 불연속이 발생하지 않도록 해야 한다.
+
+유효한 궤적이 손실되는 상황에서는 결정론적인 동작(Deterministic Behavior)이 필요하다. 계획기 갱신이 중단되거나 궤적의 타임스탬프가 만료된 경우 제어기는 오래된 기준값을 무기한 추종해서는 안 된다. 감시 장치(Watchdog) 또는 유효성 메커니즘(Validity Mechanism)은 누락되거나 지연되거나 유효하지 않은 궤적 데이터를 감지할 수 있다. 이후 시스템은 안전한 단기 명령을 유지한 뒤 제어된 감속과 정지를 수행하는 것과 같은 사전에 정의된 폴백 동작으로 전환할 수 있다.
+
+시뮬레이션(Simulation)은 실제 차량 시험 전에 계획기-제어기 통합을 검증할 수 있는 효과적인 환경을 제공한다. 시나리오에는 궤적 곡률 변화, 액추에이터 지연, 위치추정 노이즈, 휠 슬립, 페이로드 변화, 통신 지연 및 갑작스러운 재계획을 포함할 수 있다. 엔지니어는 실제 플랫폼을 동일한 조건에 노출하기 전에 횡방향 오차, 방향각 오차, 속도 오차, 제어 포화, 안정화 거동(Settling Behavior), 오버슈트(Overshoot) 및 궤적 전환 응답을 측정할 수 있다.
+
+실차 검증(Real-Vehicle Validation)은 운용 영역(Operating Envelope)을 단계적으로 확대하는 방식으로 수행해야 한다. 초기 시험에서는 저속과 단순한 궤적을 사용하고, 이후 더 큰 곡률, 높은 속도, 무거운 페이로드, 거친 지형, 동적 장애물 및 빈번한 재계획 조건을 점진적으로 도입할 수 있다. 기록된 기준 상태, 추정 상태, 제어기 출력, 액추에이터 피드백, 타임스탬프 및 안전 이벤트를 이용하면 전체 계획 및 제어 파이프라인에서 발생한 추종 실패의 원인을 추적할 수 있다.
+
+따라서 잘 통합된 궤적 추종 시스템(Trajectory Tracking System)은 단방향의 계획기-제어기 연결이 아니라 지속적인 정보 루프(Continuous Information Loop)로 동작한다. 계획기는 실행 가능한 시간 인덱스 기반 운동을 생성하고, 제어기는 이를 액추에이터 명령으로 변환하며, 차량은 물리적으로 반응하고, 상태 추정은 그 결과를 측정하며, 추종 성능은 다시 제어와 계획에 피드백된다. 일관된 인터페이스, 시간 동기화, 액추에이터 인식 계획(Actuator-Aware Planning), 피드백 감독 및 결정론적 폴백 동작을 결합함으로써 궤적 생성 결과를 신뢰성 있는 실제 물리 운동으로 연결할 수 있다.
+
+##  
+
+## 07.10. AMR High Speed Trajectory Generation Case
+
+![](images/image10.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+High-speed trajectory generation for an Autonomous Mobile Robot (AMR) differs fundamentally from conventional low-speed indoor navigation. As velocity increases, small errors in localization, curvature, prediction, and control can rapidly become significant safety risks. The trajectory generator must therefore coordinate geometric path shape, velocity profile, vehicle dynamics, terrain conditions, stopping capability, and actuator limits as one integrated motion-planning problem.
+
+Consider an outdoor AMR operating between paved roads, industrial yards, logistics areas, and moderately uneven terrain. The robot may travel slowly near pedestrians and infrastructure but accelerate substantially in open corridors. A single fixed-speed planning strategy is unsuitable for this operating envelope. The system requires a trajectory representation that continuously adapts velocity and curvature according to available space, road geometry, surface condition, perception confidence, and mission requirements.
+
+The planning architecture begins with a global or mission-level route that defines the desired corridor toward the destination. A local trajectory generator then produces executable motion over a shorter receding horizon. Localization supplies the current pose and velocity, perception identifies road boundaries and obstacles, prediction estimates dynamic-object motion, and terrain analysis provides traversability information. These inputs are synchronized before candidate trajectories are evaluated.
+
+At high speed, trajectory generation must consider the AMR as a dynamic vehicle rather than a point moving along a geometric path. Wheelbase, steering geometry, mass, center of gravity, payload, tire characteristics, braking capability, suspension response, and actuator dynamics influence executable motion. A trajectory that fits inside a road corridor may still be unsuitable if it requires excessive steering rate, lateral acceleration, braking force, or rapid load transfer.
+
+Candidate trajectories can be generated using polynomial, spline, lattice, optimization-based, or sampling-based methods. Structured road segments may favor Frenet or lattice representations, while less structured environments can require sampling or optimization in Cartesian space. The important requirement is not a single algorithm but a common trajectory interface containing time-indexed position, heading, velocity, acceleration, curvature, and other states required for feasibility checking and control.
+
+Speed planning becomes tightly coupled with path geometry. Lateral acceleration approximately follows a_y = v²κ, where v is vehicle speed and κ is trajectory curvature. Consequently, even moderate curvature can become restrictive at high speed. Instead of first selecting a path and independently assigning velocity, a high-speed AMR should coordinate path curvature and speed so that lateral acceleration remains within vehicle, tire, terrain, payload, and stability limits.
+
+A practical velocity profile can be constructed from several local limits. Maximum platform speed provides an upper bound, while curvature, obstacle distance, visibility, terrain roughness, friction, slope, mission zone, and localization uncertainty can impose lower local limits. The trajectory generator can combine these restrictions into a position- or time-dependent speed envelope and then generate acceleration and deceleration profiles that remain inside that envelope.
+
+Stopping capability is a critical high-speed constraint. The planner must maintain sufficient distance to decelerate from the current velocity under realistic braking and surface conditions. Perception range alone is not sufficient because sensing, processing, planning, communication, actuator response, and braking all introduce delay. The usable stopping margin should therefore account for system latency as well as physical braking distance and an additional safety margin.
+
+Dynamic obstacles require time-aware reasoning. A pedestrian, vehicle, forklift, or another AMR may occupy different positions when the robot reaches a future trajectory point. Candidate trajectories should therefore be evaluated against predicted obstacle motion using corresponding timestamps rather than only geometric overlap. At higher speed, prediction uncertainty becomes more important because small timing errors can significantly change the predicted interaction between the AMR and another moving object.
+
+Terrain conditions can strongly modify the allowable speed-curvature envelope. Pavement may support relatively high lateral and longitudinal acceleration, while gravel, wet surfaces, slopes, rough terrain, or loose ground may require substantial reduction. Traversability information can therefore influence both trajectory geometry and velocity. A shorter geometric path across poor terrain may be rejected in favor of a longer path that provides better traction, stability, and controllability.
+
+Suspension and body dynamics also become relevant when an outdoor AMR operates at higher velocity. Uneven terrain can excite vertical motion, roll, and pitch even when the planned planar trajectory satisfies conventional curvature limits. Terrain roughness or estimated surface geometry can be used to reduce speed before severe disturbances occur. For heavy platforms, this prevents the trajectory planner from commanding motion that is kinematically valid but dynamically unsuitable for the chassis.
+
+Payload condition should modify trajectory constraints when payload mass or distribution varies significantly. Increased mass can lengthen stopping distance and change acceleration response, while a high or asymmetric center of gravity can reduce acceptable lateral acceleration. The planner can therefore receive payload-dependent limits from the vehicle-management layer and use them when calculating speed, curvature, acceleration, jerk, and emergency stopping margins.
+
+Trajectory feasibility filtering removes candidates that violate mandatory physical or safety constraints. Each candidate can be checked for maximum and minimum speed, longitudinal acceleration, jerk, curvature, steering angle and rate, lateral acceleration, braking capability, vehicle footprint, collision clearance, terrain compatibility, and stopping distance. Only candidates that pass these hard constraints should proceed to optimization or final trajectory selection.
+
+Among feasible trajectories, the planner can evaluate multiple objectives. Travel time encourages progress, while tracking difficulty, curvature variation, acceleration, jerk, energy consumption, obstacle clearance, terrain quality, and deviation from the reference route influence overall motion quality. At high speed, these terms should not replace hard safety limits. Optimization selects the preferred trajectory only after unacceptable candidates have already been eliminated.
+
+Trajectory continuity is particularly important because abrupt changes become increasingly difficult to execute as speed rises. Re-planning should avoid unnecessary jumps in curvature, steering demand, acceleration, or velocity. The remaining portion of the previous trajectory can be shifted forward and reused as a warm start or consistency reference. New trajectories can then be penalized for excessive deviation unless a changed environment requires a significant maneuver.
+
+The receding-horizon cycle allows the AMR to continuously adapt to new information. Only an initial portion of the selected trajectory is executed before localization, perception, prediction, terrain, and vehicle-state information are updated. The planner then generates or optimizes another trajectory from the latest state. This repeated process allows high-speed motion while avoiding dependence on long-term predictions that become increasingly uncertain farther into the future.
+
+Planner frequency and computational latency must be considered together. A high update frequency provides little benefit if perception and optimization introduce excessive delay. The system should track timestamps from sensor acquisition through trajectory delivery and estimate the state corresponding to actual execution time. Candidate generation and feasibility evaluation may also be parallelized so that computationally expensive processing does not unnecessarily reduce reaction margin.
+
+Integration with the tracking controller determines whether the selected trajectory can become reliable physical motion. The planner should provide time-aligned position, heading, velocity, acceleration, curvature, and any feedforward references required by the controller. Persistent cross-track error, steering saturation, wheel slip, or failure to achieve requested acceleration should be returned to the planner because these signals indicate that the practical motion envelope is narrower than expected.
+
+High-speed operation requires explicit degradation strategies. When localization uncertainty increases, perception range decreases, terrain confidence becomes poor, actuator capability is degraded, or communication and computation experience excessive delay, the system should not continue using the same performance limits. The trajectory generator can progressively reduce velocity, enlarge safety margins, restrict curvature, or transition toward a controlled stopping trajectory.
+
+Emergency behavior must remain separate from normal trajectory optimization. If no feasible trajectory exists or an immediate hazard exceeds the normal planner\'s reaction capability, a safety layer should be able to request rapid deceleration or emergency braking. The normal planner can subsequently recover once safe conditions are restored. This separation prevents optimization objectives such as progress, comfort, or energy efficiency from interfering with mandatory hazard response.
+
+A representative high-speed AMR scenario can begin with the robot accelerating along an open industrial road. As it approaches a curved section, the local curvature limit reduces the allowable velocity. A moving vehicle then enters the predicted corridor, causing the planner to regenerate candidates with altered speed and lateral position. Farther ahead, rough terrain produces another speed reduction before the robot returns to a higher-speed segment.
+
+Throughout this scenario, the trajectory is not simply a geometric line connecting waypoints. It is a synchronized motion plan in space and time whose speed, acceleration, curvature, steering demand, obstacle interaction, terrain response, and stopping margin are continuously evaluated. The selected trajectory changes as new information arrives while remaining compatible with the controller and the physical capabilities of the AMR.
+
+Simulation should expose the system to high-speed cornering, sudden obstacles, reduced friction, localization error, delayed perception, actuator saturation, payload changes, rough terrain, and repeated re-planning. Evaluation should include tracking error, minimum obstacle clearance, lateral acceleration, stopping margin, planning latency, trajectory continuity, control saturation, and constraint violations. These measurements reveal interactions that isolated planner tests may not expose.
+
+Physical validation should expand progressively from low-speed paved operation toward higher velocity, tighter curvature, heavier payload, degraded friction, rougher terrain, and dynamic obstacles. Logged localization, perception, predicted objects, candidate trajectories, selected trajectory, controller commands, actuator feedback, and safety events should share synchronized timestamps. This enables failures to be reconstructed across the complete perception-planning-control chain.
+
+A high-speed AMR trajectory-generation system therefore combines route guidance, local trajectory generation, velocity planning, dynamic feasibility, terrain awareness, obstacle prediction, receding-horizon re-planning, controller integration, and safety supervision. Its central principle is coordinated motion: speed cannot be separated from curvature, braking cannot be separated from perception and latency, and trajectory geometry cannot be separated from terrain or vehicle dynamics. This integrated approach allows outdoor AMRs to increase operational speed without treating safety and physical feasibility as secondary corrections.
+
+자율이동로봇(Autonomous Mobile Robot, AMR)의 고속 궤적 생성(High-Speed Trajectory Generation)은 기존의 저속 실내 내비게이션(Low-Speed Indoor Navigation)과 근본적으로 다르다. 속도가 증가할수록 위치추정, 곡률, 예측 및 제어에서 발생하는 작은 오차도 빠르게 심각한 안전 위험으로 확대될 수 있다. 따라서 궤적 생성기는 기하학적 경로 형상, 속도 프로파일, 차량 동역학, 지형 조건, 정지 능력 및 액추에이터 한계를 하나의 통합된 운동 계획 문제(Integrated Motion-Planning Problem)로 조정해야 한다.
+
+포장도로, 산업 단지, 물류 구역 및 중간 수준의 불균일 지형 사이를 운행하는 야외 자율이동로봇(Outdoor AMR)을 고려할 수 있다. 로봇은 보행자와 시설물 주변에서는 저속으로 이동하지만 개방된 통로에서는 상당히 높은 속도로 가속할 수 있다. 이러한 운용 영역(Operating Envelope)에는 하나의 고정 속도 계획 전략이 적합하지 않다. 시스템에는 이용 가능한 공간, 도로 형상, 노면 상태, 인지 신뢰도 및 임무 요구사항에 따라 속도와 곡률을 지속적으로 조정하는 궤적 표현(Trajectory Representation)이 필요하다.
+
+계획 아키텍처(Planning Architecture)는 목적지까지의 원하는 주행 통로를 정의하는 전역 또는 임무 수준 경로(Global or Mission-Level Route)에서 시작한다. 이후 국부 궤적 생성기(Local Trajectory Generator)가 더 짧은 이동 지평선(Receding Horizon)에서 실행 가능한 운동을 생성한다. 위치추정(Localization)은 현재 자세와 속도를 제공하고, 인지(Perception)는 도로 경계와 장애물을 식별하며, 예측(Prediction)은 동적 객체의 운동을 추정하고, 지형 분석(Terrain Analysis)은 주행 가능성(Traversability) 정보를 제공한다. 후보 궤적을 평가하기 전에 이러한 입력 정보가 서로 동기화되어야 한다.
+
+고속에서는 궤적 생성 과정에서 AMR을 단순히 기하학적 경로를 따라 이동하는 점이 아니라 동적 차량(Dynamic Vehicle)으로 고려해야 한다. 휠베이스(Wheelbase), 조향 기하학(Steering Geometry), 질량, 무게중심(Center of Gravity), 페이로드, 타이어 특성, 제동 능력, 서스펜션 응답 및 액추에이터 동역학이 실행 가능한 운동에 영향을 준다. 도로 통로 내부에 존재하는 궤적이라도 과도한 조향률, 횡가속도, 제동력 또는 급격한 하중 이동을 요구한다면 적합하지 않을 수 있다.
+
+후보 궤적(Candidate Trajectory)은 다항식(Polynomial), 스플라인(Spline), 격자(Lattice), 최적화 기반(Optimization-Based) 또는 샘플링 기반(Sampling-Based) 방법을 이용하여 생성할 수 있다. 구조화된 도로 구간에서는 프레네(Frenet) 또는 격자 표현이 적합할 수 있으며, 비구조화 환경에서는 직교 좌표 공간(Cartesian Space)에서의 샘플링 또는 최적화가 필요할 수 있다. 중요한 것은 하나의 특정 알고리즘이 아니라 시간에 따른 위치, 방향각, 속도, 가속도, 곡률 및 실행 가능성 검사와 제어에 필요한 기타 상태를 포함하는 공통 궤적 인터페이스(Common Trajectory Interface)이다.
+
+속도 계획(Speed Planning)은 경로 형상(Path Geometry)과 긴밀하게 결합된다. 횡가속도(Lateral Acceleration)는 대략 a_y = v²κ의 관계를 따르며, 여기서 v는 차량 속도이고 κ는 궤적 곡률이다. 따라서 고속에서는 비교적 작은 곡률도 중요한 제약조건이 될 수 있다. 고속 AMR은 먼저 경로를 선택하고 독립적으로 속도를 할당하기보다 횡가속도가 차량, 타이어, 지형, 페이로드 및 안정성 한계 내에 유지되도록 경로 곡률과 속도를 함께 조정해야 한다.
+
+실용적인 속도 프로파일(Velocity Profile)은 여러 국부 제한(Local Limit)을 이용하여 구성할 수 있다. 플랫폼 최대 속도가 상한을 제공하고, 곡률, 장애물 거리, 가시거리, 지형 거칠기, 마찰, 경사, 임무 구역 및 위치추정 불확실성은 더 낮은 국부 제한을 부과할 수 있다. 궤적 생성기는 이러한 제한을 위치 또는 시간에 따라 변화하는 속도 영역(Speed Envelope)으로 통합하고, 해당 영역 안에서 유지되는 가속 및 감속 프로파일을 생성할 수 있다.
+
+정지 능력(Stopping Capability)은 고속에서 핵심적인 제약조건이다. 계획기는 실제적인 제동 및 노면 조건에서 현재 속도로부터 감속할 수 있는 충분한 거리를 확보해야 한다. 센서의 인지 거리만으로는 충분하지 않은데, 센싱, 처리, 계획, 통신, 액추에이터 응답 및 제동 과정에서 모두 지연시간(Latency)이 발생하기 때문이다. 따라서 실제 사용 가능한 정지 여유거리(Stopping Margin)는 물리적 제동거리뿐만 아니라 시스템 지연시간과 추가적인 안전 여유(Safety Margin)를 함께 고려해야 한다.
+
+동적 장애물(Dynamic Obstacle)은 시간 인식 추론(Time-Aware Reasoning)을 요구한다. 보행자, 차량, 지게차 또는 다른 AMR은 로봇이 미래의 특정 궤적 지점에 도달할 때 현재와 다른 위치를 점유할 수 있다. 따라서 후보 궤적은 단순한 기하학적 중첩 여부가 아니라 대응되는 타임스탬프를 사용하여 예측된 장애물 운동과 비교해야 한다. 고속에서는 작은 시간 오차도 AMR과 다른 이동 객체 사이의 예상 상호작용을 크게 변화시킬 수 있으므로 예측 불확실성(Prediction Uncertainty)이 더욱 중요해진다.
+
+지형 조건(Terrain Condition)은 허용 가능한 속도-곡률 영역(Speed-Curvature Envelope)을 크게 변화시킬 수 있다. 포장도로에서는 비교적 높은 횡방향 및 종방향 가속도를 허용할 수 있지만, 자갈, 젖은 노면, 경사, 거친 지형 또는 느슨한 지반에서는 상당한 속도 감소가 필요할 수 있다. 따라서 주행 가능성 정보는 궤적 형상과 속도 모두에 영향을 줄 수 있다. 열악한 지형을 통과하는 기하학적으로 짧은 경로 대신 더 나은 접지력, 안정성 및 제어 가능성을 제공하는 긴 경로를 선택할 수 있다.
+
+야외 AMR이 높은 속도로 운행할 경우 서스펜션 및 차체 동역학(Suspension and Body Dynamics)도 중요해진다. 불균일한 지형은 계획된 평면 궤적이 기존의 곡률 제한을 만족하더라도 수직 운동, 롤(Roll) 및 피치(Pitch)를 유발할 수 있다. 지형 거칠기 또는 추정된 노면 형상을 이용하여 심각한 외란이 발생하기 전에 속도를 줄일 수 있다. 중량 플랫폼에서는 이를 통해 궤적 계획기가 운동학적으로는 유효하지만 차체 동역학 측면에서는 부적합한 운동을 명령하는 것을 방지할 수 있다.
+
+페이로드 질량이나 분포가 크게 변화하는 경우 페이로드 상태(Payload Condition)에 따라 궤적 제약조건도 변경되어야 한다. 증가된 질량은 정지거리를 늘리고 가속 응답을 변화시킬 수 있으며, 높거나 비대칭적인 무게중심은 허용 가능한 횡가속도를 감소시킬 수 있다. 따라서 계획기는 차량 관리 계층(Vehicle-Management Layer)으로부터 페이로드 의존 한계(Payload-Dependent Limit)를 전달받아 속도, 곡률, 가속도, 저크(Jerk) 및 비상 정지 여유를 계산할 때 사용할 수 있다.
+
+궤적 실행 가능성 필터링(Trajectory Feasibility Filtering)은 필수적인 물리적 또는 안전 제약조건을 위반하는 후보를 제거한다. 각각의 후보에 대해 최대 및 최소 속도, 종방향 가속도, 저크, 곡률, 조향각 및 조향률, 횡가속도, 제동 능력, 차량 외곽 형상(Vehicle Footprint), 충돌 여유거리, 지형 적합성 및 정지거리를 검사할 수 있다. 이러한 하드 제약조건(Hard Constraints)을 모두 통과한 후보만 최적화 또는 최종 궤적 선택 단계로 진행해야 한다.
+
+실행 가능한 궤적 가운데 계획기는 여러 목적함수(Objective)를 평가할 수 있다. 이동 시간은 진행 속도를 높이는 방향으로 작용하며, 추종 난이도, 곡률 변화, 가속도, 저크, 에너지 소비, 장애물 여유거리, 지형 품질 및 기준 경로로부터의 편차는 전체 운동 품질에 영향을 준다. 고속에서는 이러한 항목이 하드 안전 한계를 대체해서는 안 된다. 허용할 수 없는 후보를 먼저 제거한 이후에만 최적화를 통해 선호되는 궤적을 선택해야 한다.
+
+속도가 증가할수록 급격한 궤적 변화의 실행이 어려워지므로 궤적 연속성(Trajectory Continuity)이 특히 중요하다. 재계획 과정에서는 곡률, 조향 요구량, 가속도 또는 속도의 불필요한 급격한 변화를 피해야 한다. 이전 궤적의 남은 부분을 앞으로 이동시켜 웜 스타트(Warm Start) 또는 일관성 기준(Consistency Reference)으로 다시 사용할 수 있다. 이후 환경 변화가 큰 기동을 요구하지 않는 한 새로운 궤적이 이전 궤적으로부터 과도하게 벗어나는 경우 페널티를 부여할 수 있다.
+
+이동 지평선 주기(Receding-Horizon Cycle)는 AMR이 새로운 정보에 지속적으로 적응할 수 있도록 한다. 선택된 궤적의 초기 부분만 실행한 후 위치추정, 인지, 예측, 지형 및 차량 상태 정보를 다시 갱신한다. 계획기는 이후 최신 상태를 기준으로 새로운 궤적을 생성하거나 최적화한다. 이러한 반복 과정은 미래로 갈수록 불확실성이 증가하는 장기 예측에 과도하게 의존하지 않으면서 고속 운동을 가능하게 한다.
+
+계획기 주파수(Planner Frequency)와 계산 지연시간(Computational Latency)은 함께 고려해야 한다. 인지 및 최적화 과정에서 과도한 지연이 발생한다면 높은 갱신 주파수만으로는 큰 이점을 얻기 어렵다. 시스템은 센서 획득부터 궤적 전달까지 타임스탬프를 추적하고 실제 실행 시점에 해당하는 상태를 추정해야 한다. 후보 생성 및 실행 가능성 평가를 병렬화하여 계산량이 많은 처리 과정이 반응 여유시간(Reaction Margin)을 불필요하게 감소시키지 않도록 할 수도 있다.
+
+추종 제어기(Tracking Controller)와의 통합은 선택된 궤적이 신뢰성 있는 실제 물리 운동으로 변환될 수 있는지를 결정한다. 계획기는 시간 정렬된 위치, 방향각, 속도, 가속도, 곡률 및 제어기에 필요한 피드포워드 기준값(Feedforward Reference)을 제공해야 한다. 지속적인 횡방향 오차, 조향 포화, 휠 슬립 또는 요구된 가속도 달성 실패는 실제 운동 가능 영역이 예상보다 좁다는 것을 의미하므로 이러한 신호를 계획기로 다시 전달해야 한다.
+
+고속 운용에는 명시적인 성능 저하 전략(Degradation Strategy)이 필요하다. 위치추정 불확실성이 증가하거나, 인지 거리가 감소하거나, 지형 신뢰도가 낮아지거나, 액추에이터 성능이 저하되거나, 통신 및 계산에서 과도한 지연이 발생하는 경우 시스템은 동일한 성능 한계를 계속 사용해서는 안 된다. 궤적 생성기는 점진적으로 속도를 낮추고, 안전 여유를 확대하고, 곡률을 제한하거나, 제어된 정지 궤적(Controlled Stopping Trajectory)으로 전환할 수 있다.
+
+비상 동작(Emergency Behavior)은 정상적인 궤적 최적화와 분리되어야 한다. 실행 가능한 궤적이 존재하지 않거나 즉각적인 위험이 정상 계획기의 대응 능력을 초과하는 경우 안전 계층(Safety Layer)이 급격한 감속 또는 비상 제동(Emergency Braking)을 요청할 수 있어야 한다. 이후 안전한 조건이 복원되면 정상 계획기가 다시 운용을 재개할 수 있다. 이러한 분리는 진행성, 승차감 또는 에너지 효율과 같은 최적화 목표가 필수적인 위험 대응을 방해하지 않도록 한다.
+
+대표적인 고속 AMR 시나리오에서는 로봇이 개방된 산업 도로를 따라 가속하는 상황을 고려할 수 있다. 곡선 구간에 접근하면 국부 곡률 제한(Local Curvature Limit)에 따라 허용 속도가 감소한다. 이후 이동 차량이 예측된 주행 통로에 진입하면 계획기는 속도와 횡방향 위치를 변경한 후보를 다시 생성한다. 더 앞쪽에서 거친 지형이 감지되면 다시 속도를 낮추고, 해당 구간을 통과한 후 더 높은 속도로 주행 가능한 구간으로 복귀한다.
+
+이 시나리오 전체에서 궤적은 단순히 웨이포인트(Waypoint)를 연결하는 기하학적 선이 아니다. 궤적은 공간과 시간에서 동기화된 운동 계획(Synchronized Motion Plan)이며, 속도, 가속도, 곡률, 조향 요구량, 장애물과의 상호작용, 지형 응답 및 정지 여유가 지속적으로 평가된다. 새로운 정보가 입력될 때마다 선택된 궤적은 변경되지만 동시에 제어기 및 AMR의 물리적 능력과의 호환성을 유지해야 한다.
+
+시뮬레이션(Simulation)에서는 시스템을 고속 코너링, 갑작스러운 장애물, 마찰력 감소, 위치추정 오차, 인지 지연, 액추에이터 포화, 페이로드 변화, 거친 지형 및 반복적인 재계획 상황에 노출해야 한다. 평가 항목에는 추종 오차, 최소 장애물 여유거리, 횡가속도, 정지 여유, 계획 지연시간, 궤적 연속성, 제어 포화 및 제약조건 위반이 포함되어야 한다. 이러한 측정은 개별 계획기 시험만으로는 확인하기 어려운 상호작용을 드러낼 수 있다.
+
+실차 검증(Physical Validation)은 저속 포장도로 운용에서 시작하여 더 높은 속도, 더 큰 곡률, 무거운 페이로드, 저하된 마찰 조건, 거친 지형 및 동적 장애물 조건으로 단계적으로 운용 영역을 확대해야 한다. 기록된 위치추정, 인지, 예측 객체, 후보 궤적, 선택 궤적, 제어기 명령, 액추에이터 피드백 및 안전 이벤트는 동기화된 타임스탬프를 공유해야 한다. 이를 통해 전체 인지-계획-제어 체인(Perception-Planning-Control Chain)에 걸쳐 발생한 실패를 재구성할 수 있다.
+
+따라서 고속 AMR 궤적 생성 시스템(High-Speed AMR Trajectory-Generation System)은 경로 안내(Route Guidance), 국부 궤적 생성, 속도 계획, 동적 실행 가능성(Dynamic Feasibility), 지형 인식(Terrain Awareness), 장애물 예측, 이동 지평선 재계획, 제어기 통합 및 안전 감독(Safety Supervision)을 결합한다. 핵심 원리는 조정된 운동(Coordinated Motion)이다. 속도는 곡률과 분리할 수 없고, 제동은 인지 및 지연시간과 분리할 수 없으며, 궤적 형상은 지형이나 차량 동역학과 분리할 수 없다. 이러한 통합적 접근을 통해 야외 AMR은 안전성과 물리적 실행 가능성을 부차적인 보정 요소로 취급하지 않으면서도 운용 속도를 향상시킬 수 있다.
